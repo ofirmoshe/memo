@@ -5,7 +5,7 @@ from datetime import datetime
 class ExtractRequest(BaseModel):
     """Request for extracting content from a URL and saving it."""
     user_id: str = Field(..., description="User ID")
-    url: HttpUrl = Field(..., description="URL to extract content from")
+    url: str = Field(..., description="URL to extract content from")
 
 class SearchRequest(BaseModel):
     """Request for searching content."""
@@ -29,4 +29,4 @@ class MemoraItem(BaseModel):
     similarity_score: Optional[float] = None
 
     class Config:
-        orm_mode = True 
+        from_attributes = True 
