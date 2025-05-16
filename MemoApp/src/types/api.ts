@@ -2,10 +2,13 @@ export interface ContentItem {
   id: string;
   url: string;
   title: string;
-  content_type: string;
-  platform?: string;
-  created_at: string;
+  content_type: string | null;
+  platform?: string | null;
+  timestamp?: string;
   user_id: string;
+  description?: string;
+  tags?: string[];
+  similarity_score?: number;
 }
 
 export interface SearchResponse {
@@ -29,4 +32,4 @@ export interface SearchRequest {
 export interface ApiError {
   message: string;
   code: string;
-} 
+}

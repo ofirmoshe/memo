@@ -13,8 +13,11 @@ const demoContentItems: ContentItem[] = [
     title: 'The Future of AI in Healthcare',
     content_type: 'article',
     platform: 'web',
-    created_at: '2023-01-15T10:30:00Z',
+    timestamp: '2023-01-15T10:30:00Z',
     user_id: 'demo-user',
+    description: 'This article explores how artificial intelligence will transform healthcare over the next decade, focusing on diagnostics, personalized treatment, and administrative improvements.',
+    tags: ['healthcare', 'artificial intelligence', 'technology', 'medicine'],
+    similarity_score: 0.92,
   },
   {
     id: '2',
@@ -22,8 +25,11 @@ const demoContentItems: ContentItem[] = [
     title: 'Building Scalable Web Applications',
     content_type: 'video',
     platform: 'youtube',
-    created_at: '2023-02-20T15:45:00Z',
+    timestamp: '2023-02-20T15:45:00Z',
     user_id: 'demo-user',
+    description: 'A comprehensive tutorial on building web applications that can scale to millions of users, covering architecture, caching strategies, and database optimization.',
+    tags: ['web development', 'scalability', 'programming', 'tutorial'],
+    similarity_score: 0.85,
   },
   {
     id: '3',
@@ -31,8 +37,11 @@ const demoContentItems: ContentItem[] = [
     title: 'The Art of Product Management',
     content_type: 'audio',
     platform: 'spotify',
-    created_at: '2023-03-10T09:15:00Z',
+    timestamp: '2023-03-10T09:15:00Z',
     user_id: 'demo-user',
+    description: 'An insightful podcast episode discussing the challenges and best practices in modern product management, featuring interviews with industry leaders.',
+    tags: ['product management', 'business', 'leadership', 'podcast'],
+    similarity_score: 0.78,
   },
   {
     id: '4',
@@ -40,8 +49,11 @@ const demoContentItems: ContentItem[] = [
     title: 'Understanding TypeScript Generics',
     content_type: 'article',
     platform: 'web',
-    created_at: '2023-04-05T14:20:00Z',
+    timestamp: '2023-04-05T14:20:00Z',
     user_id: 'demo-user',
+    description: 'A deep dive into TypeScript generics, explaining how they work, when to use them, and how they can make your code more robust and reusable.',
+    tags: ['typescript', 'programming', 'javascript', 'tutorial'],
+    similarity_score: 0.72,
   },
   {
     id: '5',
@@ -49,8 +61,11 @@ const demoContentItems: ContentItem[] = [
     title: 'React Native Performance Optimization',
     content_type: 'video',
     platform: 'youtube',
-    created_at: '2023-05-12T11:30:00Z',
+    timestamp: '2023-05-12T11:30:00Z',
     user_id: 'demo-user',
+    description: 'Learn practical techniques to optimize the performance of your React Native applications, including memory management, rendering optimizations, and native module integration.',
+    tags: ['react native', 'mobile development', 'performance', 'optimization'],
+    similarity_score: 0.65,
   },
 ];
 
@@ -87,8 +102,11 @@ const demoSaveUrl = async (params: SaveUrlRequest): Promise<ContentItem> => {
     title: `New Content - ${new Date().toLocaleDateString()}`,
     content_type: 'web',
     platform: 'web',
-    created_at: new Date().toISOString(),
+    timestamp: new Date().toISOString(),
     user_id: params.user_id,
+    description: 'Automatically saved content from URL submission.',
+    tags: ['saved', 'web'],
+    similarity_score: 1.0,
   };
 
   demoContentItems.unshift(newItem);
