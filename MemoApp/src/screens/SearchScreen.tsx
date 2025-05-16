@@ -15,6 +15,7 @@ import {
 import { useSearchContent } from '../services/api';
 import { getUser } from '../services/user';
 import MessageBubble from '../components/MessageBubble';
+import { ConnectionTest } from '../components/ConnectionTest';
 import { ContentItem } from '../types/api';
 import Icon from 'react-native-vector-icons/Ionicons';
 import Logo from '../components/Logo';
@@ -104,6 +105,9 @@ const SearchScreen = () => {
             <Icon name="add-circle" size={28} color="#007AFF" />
           </TouchableOpacity>
         </View>
+        
+        <ConnectionTest />
+
         <FlatList
           ref={flatListRef}
           data={messages}

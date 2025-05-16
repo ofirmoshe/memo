@@ -112,7 +112,7 @@ const realSearchContent = async (params: SearchRequest): Promise<SearchResponse>
 };
 
 const realSaveUrl = async (params: SaveUrlRequest): Promise<ContentItem> => {
-  const response = await axios.post(`${API_BASE_URL}/save-url`, params);
+  const response = await axios.post(`${API_BASE_URL}/extract_and_save`, params);
   return response.data;
 };
 
