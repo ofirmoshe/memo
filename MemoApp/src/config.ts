@@ -10,7 +10,7 @@ export const API_ENVIRONMENTS = {
 };
 
 // Select which environment to use
-export const CURRENT_API_ENV = 'LOCAL'; // Change this to switch environments
+export const CURRENT_API_ENV = 'TUNNEL'; // Change this to switch environments
 
 export const config = {
   api: {

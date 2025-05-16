@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,9 +8,12 @@ import {
   Image,
   Animated,
   Share,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { ContentItem } from '../types/api';
+import { getPreviewImageUrl, getFaviconUrl, getPlaceholderImageUrl } from '../utils/previewUtils';
+import { getCachedImage, cacheImage } from '../utils/imageCache';
 
 // Content type icon mappings
 const CONTENT_TYPE_ICONS = {
@@ -56,7 +59,54 @@ type ResultCardProps = {
 const ResultCard = ({ item, onPress }: ResultCardProps) => {
   const [expanded, setExpanded] = useState(false);
   const animatedHeight = useState(new Animated.Value(0))[0];
+  const [previewUrl, setPreviewUrl] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+  const [imageError, setImageError] = useState(false);
   
+  // Get preview image on component mount
+  useEffect(() => {
+    const loadPreviewImage = async () => {
+      try {
+        setLoading(true);
+        
+        // Check if we have this image URL in cache
+        const cachedUrl = getCachedImage(item.url);
+        if (cachedUrl) {
+          setPreviewUrl(cachedUrl);
+          setLoading(false);
+          return;
+        }
+        
+        // Try to get a content-specific preview
+        let url = getPreviewImageUrl(item.url, item.content_type);
+        
+        // If that fails, try to get a favicon as a fallback
+        if (!url) {
+          url = getFaviconUrl(item.url);
+        }
+        
+        // If all else fails, generate a placeholder based on title
+        if (!url) {
+          url = getPlaceholderImageUrl(item.title, item.content_type);
+        }
+        
+        // Store in cache for future use
+        if (url) {
+          cacheImage(item.url, url);
+        }
+        
+        setPreviewUrl(url);
+      } catch (error) {
+        console.error('Error loading preview image:', error);
+        setImageError(true);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadPreviewImage();
+  }, [item.url, item.content_type, item.title]);
+
   // Handle opening the URL
   const handleOpenUrl = async () => {
     try {
@@ -141,9 +191,21 @@ const ResultCard = ({ item, onPress }: ResultCardProps) => {
         activeOpacity={0.8}
       >
         <View style={styles.imageContainer}>
-          <View style={[styles.imagePlaceholder, { backgroundColor: placeholderColor }]}>
-            <Icon name={contentTypeIcon} size={32} color="#FFFFFF" />
-          </View>
+          {loading ? (
+            <View style={[styles.imagePlaceholder, { backgroundColor: placeholderColor }]}>
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            </View>
+          ) : imageError || !previewUrl ? (
+            <View style={[styles.imagePlaceholder, { backgroundColor: placeholderColor }]}>
+              <Icon name={contentTypeIcon} size={32} color="#FFFFFF" />
+            </View>
+          ) : (
+            <Image 
+              source={{ uri: previewUrl }} 
+              style={styles.image}
+              onError={() => setImageError(true)}
+            />
+          )}
           <View style={styles.contentTypeIconContainer}>
             <Icon name={contentTypeIcon} size={16} color="#FFFFFF" />
           </View>
