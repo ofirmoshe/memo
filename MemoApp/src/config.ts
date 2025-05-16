@@ -6,7 +6,7 @@ export const API_ENVIRONMENTS = {
   // IMPORTANT: Replace this with your actual ngrok URL from the terminal output
   // Look for a line like: "Forwarding https://xxxx-xxx-xxx-xxx.ngrok-free.app -> http://localhost:8000"
   // Copy that URL (the https://xxxx-xxx-xxx-xxx.ngrok-free.app part) and paste it below
-  TUNNEL: 'https://b839-2a00-a041-f1c6-e00-f53c-5ec4-e5bc-5fa7.ngrok-free.app', 
+  TUNNEL: ' https://92b9-2a00-a041-f1c6-e00-a55c-940b-2574-3165.ngrok-free.app', 
 };
 
 // Select which environment to use
