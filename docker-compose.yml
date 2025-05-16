@@ -17,7 +17,11 @@ services:
     command: >
       bash -c "
         echo 'Waiting for PostgreSQL to start...' &&
-        sleep 10 &&
+        while ! pg_isready -h db -U postgres; do
+          echo 'Waiting for PostgreSQL to become available...'
+          sleep 2
+        done &&
+        echo 'PostgreSQL is up - initializing database...' &&
         python -m app.cli db-migrate --init &&
         uvicorn app.main:app --host 0.0.0.0 --port 8000
       "
