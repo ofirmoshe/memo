@@ -14,6 +14,7 @@ class SearchRequest(BaseModel):
     top_k: int = Field(5, description="Number of results to return")
     content_type: Optional[str] = Field(None, description="Filter by content type")
     platform: Optional[str] = Field(None, description="Filter by platform")
+    similarity_threshold: Optional[float] = Field(0.0, description="Minimum similarity score threshold (0.0 to 1.0)")
 
 class MemoraItem(BaseModel):
     """Item stored in the Memora database."""

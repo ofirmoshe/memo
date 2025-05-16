@@ -129,7 +129,7 @@ def extract_keywords(query: str) -> List[str]:
     keywords = [word for word in words if word not in stopwords and len(word) > 2]
     return keywords
 
-def search_content(user_id: str, query: str, top_k: int = 5, content_type: str = None, platform: str = None) -> List[Dict[str, Any]]:
+def search_content(user_id: str, query: str, top_k: int = 5, content_type: str = None, platform: str = None, similarity_threshold: float = 0.0) -> List[Dict[str, Any]]:
     """
     Search for content using a natural language query.
     
@@ -139,6 +139,7 @@ def search_content(user_id: str, query: str, top_k: int = 5, content_type: str =
         top_k: Number of results to return
         content_type: Optional filter by content type
         platform: Optional filter by platform
+        similarity_threshold: Minimum similarity score threshold (0.0 to 1.0)
         
     Returns:
         List of items
@@ -186,22 +187,26 @@ def search_content(user_id: str, query: str, top_k: int = 5, content_type: str =
         # Convert map back to list
         combined_results = list(results_map.values())
         
-        # Apply filters if specified
-        if content_type or platform:
-            filtered_results = []
-            for result in combined_results:
-                # Check if result matches content_type filter
-                if content_type and result.get("content_type") != content_type:
-                    continue
+        # Apply filters
+        filtered_results = []
+        for result in combined_results:
+            # Apply similarity threshold filter
+            if result["similarity_score"] < similarity_threshold:
+                continue
                 
-                # Check if result matches platform filter
-                if platform and result.get("platform") != platform:
-                    continue
-                
-                # If we get here, the result matches all filters
-                filtered_results.append(result)
+            # Apply content_type filter if specified
+            if content_type and result.get("content_type") != content_type:
+                continue
             
-            combined_results = filtered_results
+            # Apply platform filter if specified
+            if platform and result.get("platform") != platform:
+                continue
+            
+            # If we get here, the result matches all filters
+            filtered_results.append(result)
+        
+        # Use filtered results
+        combined_results = filtered_results
         
         # Sort by similarity score
         combined_results.sort(key=lambda x: x["similarity_score"], reverse=True)

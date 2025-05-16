@@ -1,13 +1,15 @@
 """
 Database migration script for Memora.
 
-This script updates the database schema to add content_type and platform columns to the items table.
-It should be run once after updating the code.
+This script handles database migrations using Alembic.
 """
 import logging
 import os
-import sqlite3
+import subprocess
+import sys
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import OperationalError
+import alembic.config
 
 # Configure logging
 logging.basicConfig(
@@ -19,9 +21,91 @@ logger = logging.getLogger(__name__)
 # Get database URL from environment or use default
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./memora.db")
 
+def migrate_using_alembic():
+    """
+    Run database migrations using Alembic.
+    """
+    try:
+        logger.info("Running Alembic migrations...")
+        
+        # Create a new Alembic config
+        alembic_args = [
+            '--raiseerr',
+            'upgrade', 'head',
+        ]
+        
+        try:
+            # Run the Alembic command
+            alembic.config.main(argv=alembic_args)
+            logger.info("Alembic migrations completed successfully.")
+            return True
+        except Exception as e:
+            logger.error(f"Error running Alembic migrations: {str(e)}")
+            # Fall back to creating tables directly
+            logger.info("Falling back to direct table creation...")
+            from app.db.database import Base, engine
+            Base.metadata.create_all(bind=engine)
+            logger.info("Tables created directly via SQLAlchemy.")
+            return True
+            
+    except Exception as e:
+        logger.error(f"Error running migrations: {str(e)}")
+        return False
+
+def initialize_alembic():
+    """
+    Initialize Alembic if it hasn't been initialized yet.
+    """
+    try:
+        # Check if versions directory exists
+        versions_dir = os.path.join(os.getcwd(), 'alembic', 'versions')
+        if not os.path.exists(versions_dir):
+            os.makedirs(versions_dir, exist_ok=True)
+        
+        # Check if there are any migration files
+        if len(os.listdir(versions_dir)) == 0:
+            logger.info("No Alembic migrations found. Creating initial migration...")
+            
+            try:
+                # Create a new Alembic revision
+                alembic_args = [
+                    '--raiseerr',
+                    'revision',
+                    '--autogenerate',
+                    '-m', 'Initial migration'
+                ]
+                
+                # Run the Alembic command
+                alembic.config.main(argv=alembic_args)
+                
+                logger.info("Initial Alembic migration created.")
+            except Exception as e:
+                logger.error(f"Error creating initial migration: {str(e)}")
+                # Fall back to creating tables directly
+                logger.info("Falling back to direct table creation...")
+                from app.db.database import Base, engine
+                Base.metadata.create_all(bind=engine)
+                logger.info("Tables created directly via SQLAlchemy.")
+                return True
+        
+        return True
+    except Exception as e:
+        logger.error(f"Error initializing Alembic: {str(e)}")
+        # Fall back to creating tables directly
+        try:
+            logger.info("Falling back to direct table creation...")
+            from app.db.database import Base, engine
+            Base.metadata.create_all(bind=engine)
+            logger.info("Tables created directly via SQLAlchemy.")
+            return True
+        except Exception as inner_e:
+            logger.error(f"Error creating tables directly: {str(inner_e)}")
+            return False
+
 def migrate_sqlite_db():
     """
-    Migrate SQLite database to add content_type and platform columns.
+    Legacy migration for SQLite database.
+    This is kept for backwards compatibility.
     """
     # Extract SQLite file path from DATABASE_URL
     if DATABASE_URL.startswith("sqlite:///"):
@@ -35,6 +119,11 @@ def migrate_sqlite_db():
         logger.warning(f"Database file not found: {db_path}")
         logger.info("No migration needed. Database will be created with the new schema.")
         return
+    
+    logger.info("Using legacy migration for SQLite. Consider switching to Alembic for future migrations.")
+    
+    # Import SQLite module only if needed
+    import sqlite3
     
     try:
         # Connect to SQLite database
@@ -78,61 +167,58 @@ def migrate_sqlite_db():
         if 'conn' in locals():
             conn.close()
 
-def migrate_sqlalchemy_db():
+def check_database_connection():
     """
-    Migrate database using SQLAlchemy.
-    This is a more generic approach but may not work for all databases.
+    Check if the database is accessible.
     """
     try:
         # Create engine
         engine = create_engine(DATABASE_URL)
         
-        # Add content_type column
+        # Try to connect
         with engine.connect() as conn:
-            # Check if content_type column exists
-            if "sqlite" in DATABASE_URL:
-                result = conn.execute(text("PRAGMA table_info(items)"))
-                columns = result.fetchall()
-                column_names = [col[1] for col in columns]
-                
-                # Add columns if they don't exist
-                if "content_type" not in column_names:
-                    conn.execute(text("ALTER TABLE items ADD COLUMN content_type TEXT"))
-                    # Create index
-                    conn.execute(text("CREATE INDEX ix_items_content_type ON items (content_type)"))
-                
-                if "platform" not in column_names:
-                    conn.execute(text("ALTER TABLE items ADD COLUMN platform TEXT"))
-                    # Create index
-                    conn.execute(text("CREATE INDEX ix_items_platform ON items (platform)"))
-            
-            # For PostgreSQL, MySQL, etc.
-            else:
-                # These may need to be adjusted based on the database
-                try:
-                    conn.execute(text("ALTER TABLE items ADD COLUMN IF NOT EXISTS content_type TEXT"))
-                    conn.execute(text("ALTER TABLE items ADD COLUMN IF NOT EXISTS platform TEXT"))
-                    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_items_content_type ON items (content_type)"))
-                    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_items_platform ON items (platform)"))
-                except Exception as e:
-                    logger.warning(f"Failed to add columns using database-agnostic approach: {str(e)}")
-                    logger.warning("You may need to manually add the content_type and platform columns to your database.")
-            
-            conn.commit()
+            conn.execute(text("SELECT 1"))
         
-        logger.info("Database migration completed successfully.")
-    
+        logger.info(f"Successfully connected to database: {DATABASE_URL}")
+        return True
+    except OperationalError as e:
+        logger.error(f"Failed to connect to database: {str(e)}")
+        return False
     except Exception as e:
-        logger.error(f"Error migrating database: {str(e)}")
-        raise
+        logger.error(f"Unexpected error connecting to database: {str(e)}")
+        return False
 
-if __name__ == "__main__":
-    logger.info("Starting database migration...")
+def migrate_database():
+    """
+    Main migration function that orchestrates the migration process.
+    """
+    logger.info("Starting database migration process...")
     
-    # Choose migration method based on database type
+    # Check database connection
+    if not check_database_connection():
+        logger.error("Database connection failed. Migration aborted.")
+        return False
+    
+    # For SQLite, use the legacy migration method
     if DATABASE_URL.startswith("sqlite:///"):
         migrate_sqlite_db()
-    else:
-        migrate_sqlalchemy_db()
+        return True
     
-    logger.info("Migration process completed.") 
+    # For other databases, use Alembic
+    # Initialize Alembic if needed
+    if not initialize_alembic():
+        logger.error("Failed to initialize Alembic. Migration aborted.")
+        return False
+    
+    # Run migrations
+    if not migrate_using_alembic():
+        logger.error("Alembic migration failed.")
+        return False
+    
+    logger.info("Database migration completed successfully.")
+    return True
+
+if __name__ == "__main__":
+    success = migrate_database()
+    if not success:
+        sys.exit(1) 

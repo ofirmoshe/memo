@@ -16,6 +16,7 @@ Memora is an AI-powered personal memory assistant that helps users save, organiz
 
 - Python 3.9+
 - OpenAI API key
+- PostgreSQL (for production) or SQLite (for development)
 - Docker (optional)
 
 ### Installation
@@ -36,14 +37,20 @@ Memora is an AI-powered personal memory assistant that helps users save, organiz
    cp .env.example .env
    ```
    
-4. Edit `.env` file and add your OpenAI API key:
+4. Edit `.env` file and add your OpenAI API key and database configuration:
    ```
    OPENAI_API_KEY=your_openai_api_key_here
+   
+   # For local development with SQLite:
+   DATABASE_URL=sqlite:///./memora.db
+   
+   # For PostgreSQL:
+   # DATABASE_URL=postgresql://username:password@localhost:5432/memora
    ```
 
-5. Run database migrations (if upgrading from a previous version):
+5. Initialize the database and run migrations:
    ```bash
-   python -m app.cli db-migrate
+   python -m app.cli db-migrate --init
    ```
 
 ## Running Locally
@@ -172,3 +179,68 @@ Invoke-WebRequest -Method GET -Uri "http://localhost:8000/search?user_id=user1&q
   mkdir -p data
   chmod 777 data  # On Linux/macOS
   ```
+
+## Database Configuration
+
+### Using SQLite (Development)
+
+SQLite is the default database for development. No additional configuration is required.
+
+### Using PostgreSQL (Production)
+
+For production environments, PostgreSQL is recommended:
+
+1. Install PostgreSQL on your system or use a cloud provider
+2. Create a database and user:
+   ```sql
+   CREATE DATABASE memora;
+   CREATE USER memora_user WITH PASSWORD 'your_password';
+   GRANT ALL PRIVILEGES ON DATABASE memora TO memora_user;
+   ```
+3. Update your `.env` file with the PostgreSQL connection string:
+   ```
+   DATABASE_URL=postgresql://memora_user:your_password@localhost:5432/memora
+   ```
+
+### Database Migrations
+
+Memora uses Alembic for database migrations:
+
+```bash
+# Initialize migrations (first time only)
+python -m app.cli db-migrate --init
+
+# Run migrations
+python -m app.cli db-migrate
+
+# Create a new migration
+python -m app.cli create-migration "Description of changes"
+```
+
+## Cloud Deployment
+
+### Preparing for Cloud Deployment
+
+1. Set up a PostgreSQL database on your cloud provider (AWS RDS, Azure Database, Google Cloud SQL, etc.)
+
+2. Update your environment variables with the cloud database connection string:
+   ```
+   DATABASE_URL=postgresql://username:password@your-instance.region.rds.amazonaws.com:5432/memora
+   ```
+
+3. Configure connection pooling settings if needed:
+   ```
+   DB_POOL_SIZE=10
+   DB_MAX_OVERFLOW=20
+   DB_POOL_RECYCLE=1800
+   ```
+
+### Kubernetes Deployment
+
+The `k8s` directory contains Kubernetes manifests for deploying Memora to a Kubernetes cluster:
+
+1. Update the ConfigMap and Secret with your environment variables
+2. Apply the manifests:
+   ```bash
+   kubectl apply -f k8s/
+   ```

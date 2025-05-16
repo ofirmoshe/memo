@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine, Column, String, DateTime, Integer, Float, JSON, ForeignKey
+from sqlalchemy import create_engine, Column, String, DateTime, Integer, Float, JSON, ForeignKey, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 import uuid
@@ -10,13 +10,32 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Database configuration
-# Use SQLite for development, can be replaced with other DB engines for production
+# Default to PostgreSQL URL format, fallback to SQLite for development
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./memora.db")
 
-# Create SQLAlchemy engine
-engine = create_engine(
-    DATABASE_URL, connect_args={"check_same_thread": False}
-)
+# Get pool settings from environment variables
+DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "5"))
+DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "10"))
+DB_POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "30"))
+DB_POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800"))
+
+# Create SQLAlchemy engine with appropriate options
+# For PostgreSQL in production environments
+if DATABASE_URL.startswith("postgresql"):
+    engine = create_engine(
+        DATABASE_URL,
+        pool_size=DB_POOL_SIZE,
+        max_overflow=DB_MAX_OVERFLOW,
+        pool_timeout=DB_POOL_TIMEOUT,
+        pool_recycle=DB_POOL_RECYCLE,
+    )
+    logger.info(f"Using PostgreSQL database with connection pooling")
+else:
+    # SQLite for development
+    engine = create_engine(
+        DATABASE_URL, connect_args={"check_same_thread": False}
+    )
+    logger.info(f"Using SQLite database")
 
 # Create sessionmaker
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -41,7 +60,7 @@ class Item(Base):
     user_id = Column(String, ForeignKey("users.id"))
     url = Column(String, index=True)
     title = Column(String)
-    description = Column(String)
+    description = Column(Text)  # Using Text instead of String for longer content
     tags = Column(JSON)  # List of tags
     timestamp = Column(DateTime, default=datetime.utcnow)
     embedding = Column(JSON)  # List of floats for vector embedding
@@ -64,7 +83,7 @@ class Item(Base):
 def init_db():
     """Initialize the database by creating all tables."""
     Base.metadata.create_all(bind=engine)
-    logger.info("Database tables created")
+    logger.info(f"Database tables created on {DATABASE_URL}")
 
 def get_db():
     """Get a database session."""

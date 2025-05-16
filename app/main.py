@@ -60,12 +60,13 @@ async def search(
     query: str,
     top_k: Optional[int] = Query(5, ge=1, le=20),
     content_type: Optional[str] = None,
-    platform: Optional[str] = None
+    platform: Optional[str] = None,
+    similarity_threshold: Optional[float] = Query(0.3, ge=0.0, le=1.0)
 ):
     """
     Search for saved content using a natural language query.
     
-    Optionally filter by content type and platform.
+    Optionally filter by content type, platform, and similarity threshold.
     """
     try:
         results = search_content(
@@ -73,7 +74,8 @@ async def search(
             query=query,
             top_k=top_k,
             content_type=content_type,
-            platform=platform
+            platform=platform,
+            similarity_threshold=similarity_threshold
         )
         return results
     except Exception as e:
