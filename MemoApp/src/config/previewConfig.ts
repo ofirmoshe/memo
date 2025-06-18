@@ -1,17 +1,15 @@
 /**
- * Configuration file for preview services
- * In a production app, these would be loaded from environment variables
+ * Configuration for preview services
  */
-
 export const previewConfig = {
-  // LinkPreview.it API (https://www.linkpreview.net/)
-  // Free tier has 60 requests per month
-  linkPreviewApiKey: 'YOUR_LINKPREVIEW_API_KEY',
-  
-  // Microlink API (https://microlink.io/)
-  // Free tier has 50 requests per day
-  microlinkApiKey: 'YOUR_MICROLINK_API_KEY',
-  
-  // Use APIs that don't require keys when possible
+  // Whether to prefer free APIs over paid ones
   preferFreeApis: true,
+  
+  // API keys for various services (replace with actual keys in production)
+  linkPreviewApiKey: '',
+  microlinkApiKey: '',
+  
+  // Default image dimensions
+  defaultWidth: 400,
+  defaultHeight: 300,
 }; 

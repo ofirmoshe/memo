@@ -1,7 +1,16 @@
 import axios from 'axios';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { config } from '../config';
-import { SaveUrlRequest, SearchRequest, SearchResponse, ContentItem, ApiError } from '../types/api';
+import { 
+  SaveUrlRequest, 
+  SearchRequest, 
+  SearchResponse, 
+  ContentItem, 
+  ApiError, 
+  GetItemsRequest,
+  GetTagsRequest,
+  GetItemsByTagRequest
+} from '../types/api';
 
 const API_BASE_URL = config.api.baseUrl;
 
@@ -93,6 +102,61 @@ const demoSearchContent = async (params: SearchRequest): Promise<SearchResponse>
   };
 };
 
+const demoGetItems = async (params: GetItemsRequest): Promise<ContentItem[]> => {
+  await delay(config.demo.delay);
+  
+  let filteredItems = [...demoContentItems];
+  
+  // Apply content_type filter if specified
+  if (params.content_type) {
+    filteredItems = filteredItems.filter(item => 
+      item.content_type === params.content_type
+    );
+  }
+  
+  // Apply platform filter if specified
+  if (params.platform) {
+    filteredItems = filteredItems.filter(item => 
+      item.platform === params.platform
+    );
+  }
+  
+  // Apply pagination
+  const offset = params.offset || 0;
+  const limit = params.limit || 100;
+  
+  return filteredItems.slice(offset, offset + limit);
+};
+
+const demoGetTags = async (params: GetTagsRequest): Promise<string[]> => {
+  await delay(config.demo.delay);
+  
+  // Extract unique tags from demo items
+  const tags = new Set<string>();
+  demoContentItems.forEach(item => {
+    if (item.tags) {
+      item.tags.forEach(tag => tags.add(tag));
+    }
+  });
+  
+  return Array.from(tags).sort();
+};
+
+const demoGetItemsByTag = async (params: GetItemsByTagRequest): Promise<ContentItem[]> => {
+  await delay(config.demo.delay);
+  
+  // Filter items by tag
+  const filteredItems = demoContentItems.filter(item => 
+    item.tags?.some(tag => tag.toLowerCase() === params.tag.toLowerCase())
+  );
+  
+  // Apply pagination
+  const offset = params.offset || 0;
+  const limit = params.limit || 100;
+  
+  return filteredItems.slice(offset, offset + limit);
+};
+
 const demoSaveUrl = async (params: SaveUrlRequest): Promise<ContentItem> => {
   await delay(config.demo.delay);
   
@@ -129,6 +193,30 @@ const realSearchContent = async (params: SearchRequest): Promise<SearchResponse>
   };
 };
 
+const realGetItems = async (params: GetItemsRequest): Promise<ContentItem[]> => {
+  console.log('Making get items request with params:', params);
+  const response = await axios.get(`${API_BASE_URL}/items`, { params });
+  console.log('Get items response:', response.data);
+  return response.data;
+};
+
+const realGetTags = async (params: GetTagsRequest): Promise<string[]> => {
+  console.log('Making get tags request with params:', params);
+  const response = await axios.get(`${API_BASE_URL}/tags`, { params });
+  console.log('Get tags response:', response.data);
+  return response.data;
+};
+
+const realGetItemsByTag = async (params: GetItemsByTagRequest): Promise<ContentItem[]> => {
+  console.log('Making get items by tag request with params:', params);
+  const { tag, ...queryParams } = params;
+  const response = await axios.get(`${API_BASE_URL}/items/by-tag/${encodeURIComponent(tag)}`, { 
+    params: queryParams 
+  });
+  console.log('Get items by tag response:', response.data);
+  return response.data;
+};
+
 const realSaveUrl = async (params: SaveUrlRequest): Promise<ContentItem> => {
   const response = await axios.post(`${API_BASE_URL}/extract_and_save`, params);
   return response.data;
@@ -145,6 +233,9 @@ const realCheckHealth = async (): Promise<boolean> => {
 
 // API functions with demo mode support
 export const searchContentFn = config.api.useDemoData ? demoSearchContent : realSearchContent;
+export const getItemsFn = config.api.useDemoData ? demoGetItems : realGetItems;
+export const getTagsFn = config.api.useDemoData ? demoGetTags : realGetTags;
+export const getItemsByTagFn = config.api.useDemoData ? demoGetItemsByTag : realGetItemsByTag;
 export const saveUrlFn = config.api.useDemoData ? demoSaveUrl : realSaveUrl;
 export const checkHealthFn = config.api.useDemoData ? demoCheckHealth : realCheckHealth;
 
@@ -153,6 +244,30 @@ export const useSearchContent = (params: SearchRequest, options?: { enabled?: bo
   return useQuery({
     queryKey: ['search', params],
     queryFn: () => searchContentFn(params),
+    enabled: options?.enabled ?? true,
+  });
+};
+
+export const useGetItems = (params: GetItemsRequest, options?: { enabled?: boolean }) => {
+  return useQuery({
+    queryKey: ['items', params],
+    queryFn: () => getItemsFn(params),
+    enabled: options?.enabled ?? true,
+  });
+};
+
+export const useGetTags = (params: GetTagsRequest, options?: { enabled?: boolean }) => {
+  return useQuery({
+    queryKey: ['tags', params],
+    queryFn: () => getTagsFn(params),
+    enabled: options?.enabled ?? true,
+  });
+};
+
+export const useGetItemsByTag = (params: GetItemsByTagRequest, options?: { enabled?: boolean }) => {
+  return useQuery({
+    queryKey: ['itemsByTag', params],
+    queryFn: () => getItemsByTagFn(params),
     enabled: options?.enabled ?? true,
   });
 };

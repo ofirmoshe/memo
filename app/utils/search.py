@@ -218,4 +218,154 @@ def search_content(user_id: str, query: str, top_k: int = 5, content_type: str =
         logger.error(f"Error searching content: {str(e)}")
         raise
     finally:
+        db.close()
+
+def get_all_items(user_id: str, content_type: str = None, platform: str = None, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+    """
+    Get all items for a user with optional filtering.
+    
+    Args:
+        user_id: User ID
+        content_type: Optional filter by content type
+        platform: Optional filter by platform
+        limit: Maximum number of items to return
+        offset: Number of items to skip
+        
+    Returns:
+        List of items
+    """
+    logger.info(f"Getting all items for user {user_id}")
+    
+    db = SessionLocal()
+    
+    try:
+        # Start with base query
+        query = db.query(Item).filter(Item.user_id == user_id)
+        
+        # Apply content_type filter if specified
+        if content_type:
+            query = query.filter(Item.content_type == content_type)
+        
+        # Apply platform filter if specified
+        if platform:
+            query = query.filter(Item.platform == platform)
+        
+        # Apply pagination
+        query = query.order_by(Item.timestamp.desc()).offset(offset).limit(limit)
+        
+        # Execute query
+        items = query.all()
+        
+        # Convert items to dict
+        results = []
+        for item in items:
+            results.append({
+                "id": item.id,
+                "user_id": item.user_id,
+                "url": item.url,
+                "title": item.title,
+                "description": item.description,
+                "tags": item.tags,
+                "timestamp": item.timestamp,
+                "content_type": item.content_type,
+                "platform": item.platform
+            })
+        
+        return results
+    
+    except Exception as e:
+        logger.error(f"Error getting items: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+def get_all_tags(user_id: str) -> List[str]:
+    """
+    Get all unique tags used by a user.
+    
+    Args:
+        user_id: User ID
+        
+    Returns:
+        List of unique tags
+    """
+    logger.info(f"Getting all tags for user {user_id}")
+    
+    db = SessionLocal()
+    
+    try:
+        # Get all items for the user
+        items = db.query(Item).filter(Item.user_id == user_id).all()
+        
+        # Extract and flatten tags
+        all_tags = []
+        for item in items:
+            if item.tags:
+                all_tags.extend(item.tags)
+        
+        # Get unique tags
+        unique_tags = list(set(all_tags))
+        
+        # Sort alphabetically
+        unique_tags.sort()
+        
+        return unique_tags
+    
+    except Exception as e:
+        logger.error(f"Error getting tags: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+def get_items_by_tag(user_id: str, tag: str, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+    """
+    Get all items for a user with a specific tag.
+    
+    Args:
+        user_id: User ID
+        tag: Tag to filter by
+        limit: Maximum number of items to return
+        offset: Number of items to skip
+        
+    Returns:
+        List of items
+    """
+    logger.info(f"Getting items with tag '{tag}' for user {user_id}")
+    
+    db = SessionLocal()
+    
+    try:
+        # Get all items for the user
+        items = db.query(Item).filter(Item.user_id == user_id).all()
+        
+        # Filter items by tag
+        filtered_items = []
+        for item in items:
+            if item.tags and tag.lower() in [t.lower() for t in item.tags]:
+                filtered_items.append(item)
+        
+        # Apply pagination
+        paginated_items = filtered_items[offset:offset + limit]
+        
+        # Convert items to dict
+        results = []
+        for item in paginated_items:
+            results.append({
+                "id": item.id,
+                "user_id": item.user_id,
+                "url": item.url,
+                "title": item.title,
+                "description": item.description,
+                "tags": item.tags,
+                "timestamp": item.timestamp,
+                "content_type": item.content_type,
+                "platform": item.platform
+            })
+        
+        return results
+    
+    except Exception as e:
+        logger.error(f"Error getting items by tag: {str(e)}")
+        raise
+    finally:
         db.close() 

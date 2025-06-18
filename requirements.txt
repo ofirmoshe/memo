@@ -14,4 +14,5 @@ nltk>=3.8.1
 click>=8.1.7
 psycopg2-binary>=2.9.9
 alembic>=1.12.1
-sqlalchemy-utils>=0.41.1 
+sqlalchemy-utils>=0.41.1
+psutil>=5.9.6 

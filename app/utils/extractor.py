@@ -19,6 +19,15 @@ from app.utils.content_detector import content_detector, ContentType
 # Configure logging
 logger = logging.getLogger(__name__)
 
+# Predefined tag categories for content organization
+STANDARD_TAG_CATEGORIES = [
+    "technology", "programming", "science", "health", "business", 
+    "finance", "education", "entertainment", "sports", "travel",
+    "food", "fashion", "art", "design", "politics", "news",
+    "environment", "history", "philosophy", "psychology",
+    "productivity", "self-improvement", "career"
+]
+
 def is_social_media_url(url: str) -> bool:
     """
     Determine if a URL is from a social media platform using enhanced detection.
@@ -134,6 +143,48 @@ def extract_content(url: str) -> Dict[str, Any]:
     
     return content
 
+def standardize_tags(tags: List[str]) -> List[str]:
+    """
+    Standardize tags by matching them to predefined categories when possible,
+    while preserving unique tags that don't match any standard category.
+    
+    Args:
+        tags: List of tags to standardize
+        
+    Returns:
+        List of standardized tags
+    """
+    standardized_tags = []
+    remaining_tags = []
+    
+    # Convert all tags to lowercase for matching
+    lowercase_tags = [tag.lower() for tag in tags]
+    
+    # First pass: exact matches with standard categories
+    for tag in lowercase_tags:
+        if tag in STANDARD_TAG_CATEGORIES:
+            if tag not in standardized_tags:
+                standardized_tags.append(tag)
+        else:
+            remaining_tags.append(tag)
+    
+    # Second pass: partial matches with standard categories
+    for tag in remaining_tags[:]:  # Use a copy to safely modify the original list
+        matched = False
+        for category in STANDARD_TAG_CATEGORIES:
+            # Check if tag is a subset of a category or vice versa
+            if tag in category or category in tag:
+                if category not in standardized_tags:
+                    standardized_tags.append(category)
+                matched = True
+                remaining_tags.remove(tag)
+                break
+    
+    # Add remaining unique tags that didn't match any standard category
+    standardized_tags.extend(remaining_tags)
+    
+    return standardized_tags
+
 def extract_and_save_content(user_id: str, url: str) -> Dict[str, Any]:
     """
     Extract content from a URL and save it in the database.
@@ -156,6 +207,9 @@ def extract_and_save_content(user_id: str, url: str) -> Dict[str, Any]:
     
     # Analyze content with LLM
     analysis = analyze_content_with_llm(extracted_content)
+    
+    # Standardize the tags
+    analysis["tags"] = standardize_tags(analysis["tags"])
     
     # Generate embedding
     embedding = generate_embedding(

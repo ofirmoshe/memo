@@ -16,20 +16,40 @@ export interface SearchResponse {
   total: number;
 }
 
-export interface SaveUrlRequest {
-  user_id: string;
-  url: string;
-}
-
 export interface SearchRequest {
   user_id: string;
   query: string;
   top_k?: number;
   content_type?: string;
   platform?: string;
+  similarity_threshold?: number;
+}
+
+export interface GetItemsRequest {
+  user_id: string;
+  content_type?: string;
+  platform?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface GetTagsRequest {
+  user_id: string;
+}
+
+export interface GetItemsByTagRequest {
+  user_id: string;
+  tag: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface SaveUrlRequest {
+  user_id: string;
+  url: string;
 }
 
 export interface ApiError {
   message: string;
-  code: string;
+  status: number;
 }

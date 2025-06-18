@@ -1,5 +1,4 @@
 import { Platform } from 'react-native';
-import { previewConfig } from '../config/previewConfig';
 
 // Types of services we can get preview images from
 type PreviewService = 'linkpreview' | 'microlink' | 'favicon' | 'ogimage';
@@ -49,6 +48,13 @@ const DOMAIN_SPECIFIC_RULES: Record<string, {
     },
     type: 'social_media'
   },
+  'tiktok.com': {
+    getImageUrl: (url: string) => {
+      // Use link preview service for TikTok
+      return getLinkPreviewImage(url);
+    },
+    type: 'social_media'
+  },
   'medium.com': {
     getImageUrl: (url: string) => {
       return getLinkPreviewImage(url);
@@ -60,27 +66,20 @@ const DOMAIN_SPECIFIC_RULES: Record<string, {
 /**
  * Extract domain from URL
  */
-export function extractDomain(url: string): string {
+const extractDomain = (url: string): string => {
   try {
     const urlObj = new URL(url);
-    let domain = urlObj.hostname;
-    
-    // Remove 'www.' prefix if present
-    if (domain.startsWith('www.')) {
-      domain = domain.substring(4);
-    }
-    
-    return domain;
+    return urlObj.hostname;
   } catch (e) {
-    console.error('Invalid URL:', url);
-    return '';
+    console.error('Error extracting domain:', e);
+    return url;
   }
-}
+};
 
 /**
  * Get preview image URL for any content URL
  */
-export function getPreviewImageUrl(url: string, contentType?: string | null): string {
+export const getPreviewImageUrl = (url: string, contentType?: string | null): string | undefined => {
   try {
     // First try domain-specific rules
     const domain = extractDomain(url);
@@ -99,19 +98,21 @@ export function getPreviewImageUrl(url: string, contentType?: string | null): st
       }
     }
     
-    // Check for common patterns in URLs to optimize image fetching
+    // Special handling for TikTok
+    if (domain.includes('tiktok.com')) {
+      return getLinkPreviewImage(url);
+    }
     
-    // For YouTube, extract the video ID from URL parameters
-    if (url.includes('youtube.com/watch') && url.includes('v=')) {
-      const videoIdMatch = url.match(/v=([^&]+)/);
-      if (videoIdMatch && videoIdMatch[1]) {
-        return `https://img.youtube.com/vi/${videoIdMatch[1]}/hqdefault.jpg`;
+    // For YouTube videos
+    if (contentType === 'video' && url.includes('youtube.com')) {
+      const videoId = url.match(/v=([^&]+)/)?.[1];
+      if (videoId) {
+        return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
       }
     }
     
     // For Instagram posts
     if (url.includes('instagram.com/p/')) {
-      // We can't directly get Instagram images anymore, so use link preview
       return getLinkPreviewImage(url);
     }
     
@@ -134,14 +135,12 @@ export function getPreviewImageUrl(url: string, contentType?: string | null): st
     }
     
     // If no specific rule matches, use OpenGraph image if available
-    // This would require server-side fetching or a service
-    // For now, use a general approach with link preview
     return getLinkPreviewImage(url);
   } catch (e) {
-    console.error('Error getting preview image:', e);
-    return '';
+    console.error('Error getting preview image URL:', e);
+    return undefined;
   }
-}
+};
 
 /**
  * Extract YouTube video ID from a YouTube URL
@@ -156,56 +155,52 @@ function extractYoutubeVideoId(url: string): string | null {
  * Get a preview image using a link preview service
  */
 function getLinkPreviewImage(url: string): string {
-  if (previewConfig.preferFreeApis) {
-    // Use Microlink's free version without a key
-    // 50 requests per day in the free tier without a key
-    return `https://api.microlink.io/?url=${encodeURIComponent(url)}&embed=image.url`;
-  } else if (previewConfig.linkPreviewApiKey) {
-    // Use LinkPreview.it API with key
-    return `https://api.linkpreview.net/?key=${previewConfig.linkPreviewApiKey}&q=${encodeURIComponent(url)}`;
-  } else if (previewConfig.microlinkApiKey) {
-    // Use Microlink API with key
-    return `https://api.microlink.io/?url=${encodeURIComponent(url)}&apiKey=${previewConfig.microlinkApiKey}&embed=image.url`;
-  } else {
-    // Use a free API that doesn't require a key but has limitations
-    // We'll use a free service from PageSpeed for a quick preview
-    return `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&screenshot=true`;
-  }
+  // Use a reliable service that doesn't require API keys for demo purposes
+  // In a production app, you would use a paid API with proper keys
+  
+  // For demo purposes, use a service that provides CORS-friendly responses
+  return `https://api.microlink.io/?url=${encodeURIComponent(url)}&embed=image.url`;
 }
 
 /**
  * Get favicon for a domain
  */
-export function getFaviconUrl(url: string): string {
+export const getFaviconUrl = (url: string): string | undefined => {
   try {
-    const domain = extractDomain(url);
-    if (!domain) return '';
+    // Extract the domain from the URL
+    const urlObj = new URL(url);
+    const domain = urlObj.hostname;
     
-    // Google's favicon service
+    // Return a Google favicon service URL
     return `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
   } catch (e) {
-    console.error('Error getting favicon:', e);
-    return '';
+    console.error('Error parsing URL for favicon:', e);
+    return undefined;
   }
-}
+};
 
 /**
- * Generate a placeholder image URL using UI Avatars service based on content title
+ * Generate a placeholder image URL based on title and content type
+ * 
+ * @param title The title of the content
+ * @param contentType The type of content
+ * @returns A URL for a placeholder image
  */
-export function getPlaceholderImageUrl(title: string, contentType: string | null): string {
-  // Get first letter of title or use a default
-  const firstLetter = title.charAt(0).toUpperCase() || 'M';
-  const colorMap: Record<string, string> = {
-    'article': '0984e3',
-    'video': 'e84118',
-    'audio': '8854d0',
-    'social_media': '3b5998',
-    'image': '20bf6b',
-    'pdf': 'd63031',
-  };
+export const getPlaceholderImageUrl = (title: string, contentType?: string | null): string => {
+  // For now, we'll just return a placeholder image
+  // In a real app, you might use a service like DiceBear or Placeholder.com
   
-  const color = contentType && colorMap[contentType] ? colorMap[contentType] : '8395a7';
+  // Get first letter of title, or use a default
+  const initial = title && title.length > 0 ? title[0].toUpperCase() : 'M';
   
-  // Use UI Avatars to generate a custom placeholder with the first letter
-  return `https://ui-avatars.com/api/?name=${firstLetter}&background=${color}&color=fff&size=128`;
-} 
+  // Get a color based on content type
+  let color = '007AFF'; // Default blue
+  if (contentType === 'article') color = 'FF9500';
+  if (contentType === 'video') color = 'FF3B30';
+  if (contentType === 'audio') color = 'AF52DE';
+  if (contentType === 'social_media') color = '5856D6';
+  if (contentType === 'image') color = '34C759';
+  
+  // Return a placeholder URL
+  return `https://via.placeholder.com/400/${color}/FFFFFF?text=${initial}`;
+}; 

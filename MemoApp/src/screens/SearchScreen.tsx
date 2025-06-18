@@ -2,19 +2,19 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   StyleSheet,
-  FlatList,
   ActivityIndicator,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
+  ScrollView,
   StatusBar,
-  KeyboardAvoidingView,
   Platform,
   Text,
+  KeyboardAvoidingView,
+  Keyboard,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSearchContent } from '../services/api';
 import { getUser } from '../services/user';
-import { ConnectionTest } from '../components/ConnectionTest';
 import { ContentItem } from '../types/api';
 import Icon from 'react-native-vector-icons/Ionicons';
 import Logo from '../components/Logo';
@@ -22,14 +22,9 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
 import ResultCard from '../components/ResultCard';
+import theme from '../config/theme';
 
 type SearchScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Search'>;
-
-type QueryItem = {
-  id: string;
-  text: string;
-  timestamp: number;
-};
 
 type ResultSection = {
   id: string;
@@ -45,7 +40,95 @@ const SearchScreen = () => {
   const [resultSections, setResultSections] = useState<ResultSection[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
-  const flatListRef = useRef<FlatList>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const searchBarRef = useRef<View>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const insets = useSafeAreaInsets();
+
+  // Web-specific fix for search bar positioning
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      // Add a style tag to the document head
+      const styleTag = document.createElement('style');
+      styleTag.innerHTML = `
+        .search-bar-fixed {
+          position: fixed !important;
+          bottom: 0 !important;
+          left: 0 !important;
+          right: 0 !important;
+          z-index: 9999 !important;
+          background-color: white !important;
+          border-top: 1px solid #E5E5EA !important;
+        }
+        
+        .content-area {
+          height: calc(100vh - 140px) !important;
+          overflow: hidden !important;
+          position: relative !important;
+        }
+        
+        .results-scroll {
+          height: 100% !important;
+          overflow-y: scroll !important;
+          -webkit-overflow-scrolling: touch !important;
+          scrollbar-width: thin !important;
+          scrollbar-color: #C7C7CC #F2F2F7 !important;
+        }
+        
+        .results-scroll::-webkit-scrollbar {
+          width: 8px !important;
+        }
+        
+        .results-scroll::-webkit-scrollbar-track {
+          background: #F2F2F7 !important;
+          border-radius: 4px !important;
+        }
+        
+        .results-scroll::-webkit-scrollbar-thumb {
+          background-color: #C7C7CC !important;
+          border-radius: 4px !important;
+          border: 2px solid #F2F2F7 !important;
+        }
+        
+        .results-scroll::-webkit-scrollbar-thumb:hover {
+          background-color: #AEAEB2 !important;
+        }
+      `;
+      document.head.appendChild(styleTag);
+      
+      // Function to apply the fixed class to the search bar
+      const fixSearchBar = () => {
+        const searchBarElement = document.getElementById('search-bar-container');
+        if (searchBarElement) {
+          searchBarElement.className = 'search-bar-fixed';
+        }
+        
+        const contentArea = document.getElementById('content-area');
+        if (contentArea) {
+          contentArea.className = 'content-area';
+        }
+        
+        const scrollView = document.getElementById('results-scroll');
+        if (scrollView) {
+          scrollView.className = 'results-scroll';
+        }
+      };
+      
+      // Apply immediately and after each render
+      setTimeout(fixSearchBar, 0);
+      setTimeout(fixSearchBar, 100);
+      setTimeout(fixSearchBar, 500);
+      
+      // Add event listener for window resize to reapply styles
+      window.addEventListener('resize', fixSearchBar);
+      
+      // Clean up
+      return () => {
+        document.head.removeChild(styleTag);
+        window.removeEventListener('resize', fixSearchBar);
+      };
+    }
+  }, []);
 
   useEffect(() => {
     const loadUserId = async () => {
@@ -63,13 +146,11 @@ const SearchScreen = () => {
   useEffect(() => {
     if (error) {
       console.error('Search error:', error);
-      // Show error in UI if needed
     }
   }, [error]);
 
   useEffect(() => {
     if (data?.items && searchQuery) {
-      // Add new result section
       const newSection: ResultSection = {
         id: `query-${Date.now()}`,
         query: searchQuery,
@@ -78,24 +159,75 @@ const SearchScreen = () => {
       };
       
       setResultSections(prev => [newSection, ...prev]);
-      
-      // Clear current search query after results are loaded
       setSearchQuery('');
       
-      // Scroll to top to show new results
-      if (flatListRef.current) {
-        flatListRef.current.scrollToOffset({ offset: 0, animated: true });
+      if (scrollViewRef.current) {
+        scrollViewRef.current.scrollTo({ y: 0, animated: true });
+      }
+      
+      // Re-apply the fixed positioning for web
+      if (Platform.OS === 'web') {
+        const searchBarElement = document.getElementById('search-bar-container');
+        if (searchBarElement) {
+          searchBarElement.className = 'search-bar-fixed';
+        }
+        
+        const scrollView = document.getElementById('results-scroll');
+        if (scrollView) {
+          scrollView.className = 'results-scroll';
+        }
       }
     }
   }, [data, searchQuery]);
 
+  // Web-specific fix for scrolling
+  useEffect(() => {
+    if (Platform.OS === 'web' && resultSections.length > 0) {
+      // Direct DOM manipulation to ensure scrolling works
+      const scrollView = document.getElementById('results-scroll');
+      if (scrollView) {
+        // Force the scrollView to be scrollable
+        scrollView.style.overflowY = 'scroll';
+        scrollView.style.height = '100%';
+        
+        // Add some test content to ensure scrolling is possible
+        const contentArea = document.getElementById('content-area');
+        if (contentArea) {
+          contentArea.style.height = 'calc(100vh - 140px)';
+          contentArea.style.overflow = 'hidden';
+        }
+      }
+    }
+  }, [resultSections]);
+
+  // Add keyboard listeners
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => {
+        setKeyboardVisible(true);
+      }
+    );
+    const keyboardDidHideListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardVisible(false);
+      }
+    );
+
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
+  }, []);
+
   const handleSearch = () => {
     if (!input.trim()) return;
-
     const query = input.trim();
     setSearchQuery(query);
     setInput('');
     setIsTyping(false);
+    Keyboard.dismiss();
   };
 
   const handleInputFocus = () => {
@@ -106,8 +238,13 @@ const SearchScreen = () => {
     setIsTyping(false);
   };
 
-  const renderResultSection = ({ item }: { item: ResultSection }) => (
-    <View style={styles.resultSection}>
+  // Navigate to tags screen
+  const handleTagsPress = () => {
+    navigation.navigate('Tags');
+  };
+
+  const renderResultSection = (item: ResultSection) => (
+    <View key={item.id} style={styles.resultSection}>
       <View style={styles.queryContainer}>
         <Icon name="search-outline" size={16} color="#007AFF" />
         <Text style={styles.queryText}>{item.query}</Text>
@@ -135,193 +272,278 @@ const SearchScreen = () => {
   );
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.toolbar}>
-          <View style={styles.logoContainer}>
-            <Logo size={28} />
-            <Text style={styles.appName}>memo</Text>
-          </View>
+    <SafeAreaView style={styles.outerContainer} edges={['top', 'right', 'left', 'bottom']}>
+      {/* Header */}
+      <View style={styles.toolbar}>
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => navigation.navigate('Home')}>
+          <Icon name="home" size={28} color={theme.colors.primary} />
+        </TouchableOpacity>
+        <View style={styles.logoContainer}>
+          <Logo size={32} color={theme.colors.primary} />
+          <Text style={styles.appName}>Memora</Text>
+        </View>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity style={styles.iconButton} onPress={handleTagsPress}>
+            <Icon name="pricetags" size={28} color={theme.colors.primary} />
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.addButton}
             onPress={() => navigation.navigate('UrlSubmission')}>
-            <Icon name="add-circle" size={28} color="#007AFF" />
+            <Icon name="add-circle" size={32} color={theme.colors.accent} />
           </TouchableOpacity>
         </View>
+      </View>
+      
+      {/* Content Area */}
+      <View style={styles.mainContainer}>
+        <View 
+          style={styles.contentArea}
+          // @ts-ignore - Web only property
+          id={Platform.OS === 'web' ? 'content-area' : undefined}
+        >
+          {resultSections.length === 0 && !isLoading ? (
+            <View style={styles.emptyStateContainer}>
+              <Icon name="search" size={64} color="#E5E5EA" />
+              <Text style={styles.emptyStateTitle}>Search your memories</Text>
+              <Text style={styles.emptyStateSubtitle}>
+                Type a query below to search through your saved content
+              </Text>
+            </View>
+          ) : (
+            <ScrollView 
+              ref={scrollViewRef}
+              style={styles.scrollView}
+              contentContainerStyle={[
+                styles.resultsList,
+                { paddingBottom: 80 + insets.bottom }
+              ]}
+              // @ts-ignore - Web only property
+              id={Platform.OS === 'web' ? 'results-scroll' : undefined}
+              showsVerticalScrollIndicator={true}
+              persistentScrollbar={true}
+            >
+              {resultSections.map(section => renderResultSection(section))}
+            </ScrollView>
+          )}
+          
+          {isLoading && (
+            <View style={styles.loadingOverlay}>
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#007AFF" />
+                <Text style={styles.loadingText}>Searching...</Text>
+              </View>
+            </View>
+          )}
+        </View>
         
-        {/* <ConnectionTest /> */}
-
-        {resultSections.length === 0 && !isLoading ? (
-          <View style={styles.emptyStateContainer}>
-            <Icon name="search" size={64} color="#E5E5EA" />
-            <Text style={styles.emptyStateTitle}>Search your memories</Text>
-            <Text style={styles.emptyStateSubtitle}>
-              Type a query below to search through your saved content
-            </Text>
-          </View>
-        ) : (
-          <FlatList
-            ref={flatListRef}
-            data={resultSections}
-            keyExtractor={(item) => item.id}
-            renderItem={renderResultSection}
-            contentContainerStyle={styles.resultsList}
-          />
-        )}
-        
-        {isLoading && (
-          <View style={styles.loadingOverlay}>
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#007AFF" />
-              <Text style={styles.loadingText}>Searching...</Text>
+        {/* Search Bar - Fixed at bottom with proper safe area insets */}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
+          style={styles.keyboardAvoid}
+        >
+          <View 
+            ref={searchBarRef}
+            style={[
+              styles.searchBarContainer,
+              { paddingBottom: keyboardVisible ? 0 : insets.bottom }
+            ]}
+            // @ts-ignore - Web only property
+            id={Platform.OS === 'web' ? 'search-bar-container' : undefined}
+          >
+            <View style={styles.searchContainer}>
+              <TextInput
+                style={[
+                  styles.input,
+                  isTyping && styles.inputFocused,
+                ]}
+                value={input}
+                onChangeText={setInput}
+                onFocus={handleInputFocus}
+                onBlur={handleInputBlur}
+                placeholder="Search your saved content..."
+                placeholderTextColor="#8E8E93"
+                returnKeyType="search"
+                onSubmitEditing={handleSearch}
+              />
+              <TouchableOpacity 
+                style={[
+                  styles.searchButton,
+                  !input.trim() && styles.searchButtonDisabled
+                ]} 
+                onPress={handleSearch}
+                disabled={!input.trim()}>
+                <Icon name="search" size={24} color={input.trim() ? "#007AFF" : "#C7C7CC"} />
+              </TouchableOpacity>
             </View>
           </View>
-        )}
-      </SafeAreaView>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
-        <View style={styles.searchContainer}>
-          <TextInput
-            style={[
-              styles.input,
-              isTyping && styles.inputFocused,
-            ]}
-            value={input}
-            onChangeText={setInput}
-            onFocus={handleInputFocus}
-            onBlur={handleInputBlur}
-            placeholder="Search your saved content..."
-            placeholderTextColor="#8E8E93"
-            returnKeyType="search"
-            onSubmitEditing={handleSearch}
-          />
-          <TouchableOpacity 
-            style={[
-              styles.searchButton,
-              !input.trim() && styles.searchButtonDisabled
-            ]} 
-            onPress={handleSearch}
-            disabled={!input.trim()}>
-            <Icon name="search" size={24} color={input.trim() ? "#007AFF" : "#C7C7CC"} />
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
-    </View>
+        </KeyboardAvoidingView>
+      </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  outerContainer: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.colors.background,
   },
-  safeArea: {
+  mainContainer: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    position: 'relative',
+  },
+  keyboardAvoid: {
+    width: '100%',
   },
   toolbar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    borderBottomWidth: 0,
+    backgroundColor: theme.colors.cardGlass,
+    borderRadius: 0,
+    shadowColor: theme.colors.shadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 6,
+    zIndex: 10,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 22,
+    backgroundColor: 'rgba(99,102,241,0.08)',
+  },
+  contentArea: {
+    flex: 1,
+    position: 'relative',
+    overflow: Platform.OS === 'web' ? 'hidden' : 'visible',
+  },
+  scrollView: {
+    flex: 1,
+    height: Platform.OS === 'web' ? '100%' : undefined,
+    width: '100%',
+    overflow: Platform.OS === 'web' ? 'scroll' : undefined,
   },
   logoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   appName: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#000000',
-    marginLeft: 8,
+    fontSize: theme.font.size.xl,
+    fontWeight: 'bold',
+    color: theme.colors.primary,
+    marginLeft: theme.spacing.md,
+    letterSpacing: 1.2,
   },
   addButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
+    borderRadius: 22,
+    backgroundColor: 'rgba(244,114,182,0.10)',
+    marginLeft: theme.spacing.sm,
+  },
+  searchBarContainer: {
+    backgroundColor: theme.colors.cardGlass,
+    borderTopWidth: 0,
+    width: '100%',
+    shadowColor: theme.colors.shadow,
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.10,
+    shadowRadius: 8,
+    elevation: 4,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E5EA',
-    backgroundColor: '#FFFFFF',
+    padding: theme.spacing.md,
+    backgroundColor: 'transparent',
   },
   input: {
     flex: 1,
-    backgroundColor: '#F2F2F7',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    marginRight: 12,
+    backgroundColor: theme.colors.background,
+    borderRadius: 16,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.sm,
+    fontSize: theme.font.size.md,
+    marginRight: theme.spacing.md,
+    color: theme.colors.text,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+    fontWeight: '500',
   },
   inputFocused: {
-    backgroundColor: '#E5E5EA',
-    borderWidth: 1,
-    borderColor: '#007AFF',
+    backgroundColor: theme.colors.card,
+    borderWidth: 1.5,
+    borderColor: theme.colors.primary,
   },
   searchButton: {
     width: 48,
     height: 48,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F2F2F7',
+    backgroundColor: theme.colors.primary,
     borderRadius: 24,
+    shadowColor: theme.colors.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 2,
   },
   searchButtonDisabled: {
-    backgroundColor: '#F2F2F7',
+    backgroundColor: theme.colors.border,
   },
   resultsList: {
-    padding: 12,
-    paddingBottom: 80,
+    padding: theme.spacing.md,
   },
   resultSection: {
-    marginBottom: 24,
+    marginBottom: theme.spacing.xl,
   },
   queryContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
-    paddingHorizontal: 4,
+    marginBottom: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.xs,
   },
   queryText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#007AFF',
-    marginLeft: 8,
+    fontSize: theme.font.size.md,
+    fontWeight: 'bold',
+    color: theme.colors.primary,
+    marginLeft: theme.spacing.sm,
     flex: 1,
   },
   timestampText: {
-    fontSize: 12,
-    color: '#8E8E93',
+    fontSize: theme.font.size.xs,
+    color: theme.colors.textSecondary,
   },
   resultCount: {
-    fontSize: 14,
-    color: '#8E8E93',
-    marginBottom: 12,
-    paddingHorizontal: 4,
+    fontSize: theme.font.size.sm,
+    color: theme.colors.textSecondary,
+    marginBottom: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.xs,
   },
   resultsContainer: {
-    gap: 8,
+    gap: theme.spacing.sm,
   },
   emptyResultsContainer: {
-    padding: 24,
+    padding: theme.spacing.lg,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F2F2F7',
-    borderRadius: 12,
+    backgroundColor: theme.colors.cardGlass,
+    borderRadius: 16,
   },
   emptyResultsText: {
-    fontSize: 16,
-    color: '#8E8E93',
+    fontSize: theme.font.size.md,
+    color: theme.colors.textSecondary,
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -331,38 +553,51 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   loadingContainer: {
-    padding: 20,
-    borderRadius: 12,
-    backgroundColor: 'white',
+    padding: theme.spacing.lg,
+    borderRadius: 16,
+    backgroundColor: theme.colors.cardGlass,
     alignItems: 'center',
-    shadowColor: '#000',
+    shadowColor: theme.colors.shadow,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOpacity: 0.10,
+    shadowRadius: 8,
     elevation: 3,
   },
   loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#007AFF',
+    marginTop: theme.spacing.md,
+    fontSize: theme.font.size.md,
+    color: theme.colors.primary,
   },
   emptyStateContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
+    padding: theme.spacing.lg,
   },
   emptyStateTitle: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: '#000000',
-    marginTop: 16,
-    marginBottom: 8,
+    fontSize: theme.font.size.xl,
+    fontWeight: 'bold',
+    color: theme.colors.text,
+    marginTop: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
   },
   emptyStateSubtitle: {
-    fontSize: 16,
-    color: '#8E8E93',
+    fontSize: theme.font.size.md,
+    color: theme.colors.textSecondary,
     textAlign: 'center',
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  iconButton: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 22,
+    backgroundColor: 'rgba(99,102,241,0.08)',
+    marginLeft: theme.spacing.sm,
   },
 });
 

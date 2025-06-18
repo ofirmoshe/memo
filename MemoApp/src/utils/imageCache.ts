@@ -1,64 +1,33 @@
 /**
- * Simple in-memory cache for image URLs to avoid excessive API calls
+ * Simple in-memory cache for image URLs
  */
 
-interface CacheEntry {
-  url: string;
-  timestamp: number;
-}
-
-// Cache entries with URL as key
-const imageCache: Record<string, CacheEntry> = {};
-
-// Cache expiration time (3 days in milliseconds)
-const CACHE_EXPIRATION = 3 * 24 * 60 * 60 * 1000;
+// Simple in-memory cache for image URLs
+const imageCache: Record<string, string> = {};
 
 /**
- * Get an image URL from cache if available
- * @param key - Unique identifier for the cached image (usually content URL)
- * @returns Cached image URL or null if not found/expired
+ * Get a cached image URL for a content URL
+ * @param contentUrl The content URL to get the cached image for
+ * @returns The cached image URL or undefined if not found
  */
-export function getCachedImage(key: string): string | null {
-  const entry = imageCache[key];
-  
-  if (!entry) {
-    return null;
-  }
-  
-  // Check if cache has expired
-  const now = Date.now();
-  if (now - entry.timestamp > CACHE_EXPIRATION) {
-    // Cache expired, remove it
+export const getCachedImage = (contentUrl: string): string | undefined => {
+  return imageCache[contentUrl];
+};
+
+/**
+ * Cache an image URL for a content URL
+ * @param contentUrl The content URL to cache the image for
+ * @param imageUrl The image URL to cache
+ */
+export const cacheImage = (contentUrl: string, imageUrl: string): void => {
+  imageCache[contentUrl] = imageUrl;
+};
+
+/**
+ * Clear the image cache
+ */
+export const clearImageCache = (): void => {
+  Object.keys(imageCache).forEach(key => {
     delete imageCache[key];
-    return null;
-  }
-  
-  return entry.url;
-}
-
-/**
- * Store an image URL in the cache
- * @param key - Unique identifier for the image (usually content URL)
- * @param imageUrl - URL of the image to cache
- */
-export function cacheImage(key: string, imageUrl: string): void {
-  imageCache[key] = {
-    url: imageUrl,
-    timestamp: Date.now()
-  };
-}
-
-/**
- * Clear the entire image cache or entries for a specific key
- * @param key - Optional key to remove specific cache entry
- */
-export function clearImageCache(key?: string): void {
-  if (key) {
-    delete imageCache[key];
-  } else {
-    // Clear all cache
-    Object.keys(imageCache).forEach(k => {
-      delete imageCache[k];
-    });
-  }
-} 
+  });
+}; 
