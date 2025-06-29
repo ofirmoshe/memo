@@ -564,18 +564,43 @@ async def get_file(item_id: str, user_id: str = Query(...), db: Session = Depend
         item = db.query(Item).filter(Item.id == item_id, Item.user_id == user_id).first()
         
         if not item:
+            logger.error(f"Item not found: {item_id} for user: {user_id}")
             raise HTTPException(status_code=404, detail="File not found")
         
         if not item.file_path:
+            logger.error(f"No file path for item: {item_id}")
             raise HTTPException(status_code=404, detail="File path not available")
         
+        # Convert relative path to absolute path if needed
+        file_path = item.file_path
+        if not os.path.isabs(file_path):
+            # If it's a relative path, make it relative to the current working directory
+            file_path = os.path.abspath(file_path)
+        
+        logger.info(f"Item {item_id} - Original path: {item.file_path}")
+        logger.info(f"Item {item_id} - Resolved path: {file_path}")
+        logger.info(f"Current working directory: {os.getcwd()}")
+        
         # Check if file exists on disk
-        if not os.path.exists(item.file_path):
-            raise HTTPException(status_code=404, detail="File not found on disk")
+        if not os.path.exists(file_path):
+            logger.error(f"File not found on disk: {file_path}")
+            # List directory contents for debugging
+            dir_path = os.path.dirname(file_path)
+            if os.path.exists(dir_path):
+                try:
+                    files_in_dir = os.listdir(dir_path)
+                    logger.info(f"Files in directory {dir_path}: {files_in_dir}")
+                except Exception as e:
+                    logger.error(f"Could not list directory {dir_path}: {e}")
+            else:
+                logger.error(f"Directory does not exist: {dir_path}")
+            raise HTTPException(status_code=404, detail=f"File not found on disk: {file_path}")
+        
+        logger.info(f"Successfully found file: {file_path}")
         
         # Return the file
         return FileResponse(
-            path=item.file_path,
+            path=file_path,
             filename=item.title or "download",
             media_type=item.mime_type
         )
@@ -585,6 +610,50 @@ async def get_file(item_id: str, user_id: str = Query(...), db: Session = Depend
     except Exception as e:
         logger.error(f"Error serving file {item_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error serving file: {str(e)}")
+
+@app.get("/debug/file/{item_id}")
+async def debug_file(item_id: str, user_id: str = Query(...), db: Session = Depends(get_db)):
+    """Debug endpoint to check file information."""
+    try:
+        # Get the item from database
+        item = db.query(Item).filter(Item.id == item_id, Item.user_id == user_id).first()
+        
+        if not item:
+            return {"error": "Item not found"}
+        
+        file_path = item.file_path
+        abs_file_path = os.path.abspath(file_path) if file_path else None
+        
+        debug_info = {
+            "item_id": item_id,
+            "user_id": user_id,
+            "original_file_path": file_path,
+            "absolute_file_path": abs_file_path,
+            "current_working_directory": os.getcwd(),
+            "file_exists": os.path.exists(abs_file_path) if abs_file_path else False,
+            "item_info": {
+                "title": item.title,
+                "media_type": item.media_type,
+                "mime_type": item.mime_type,
+                "file_size": item.file_size
+            }
+        }
+        
+        # Check directory contents
+        if abs_file_path:
+            dir_path = os.path.dirname(abs_file_path)
+            if os.path.exists(dir_path):
+                try:
+                    debug_info["directory_contents"] = os.listdir(dir_path)
+                except Exception as e:
+                    debug_info["directory_error"] = str(e)
+            else:
+                debug_info["directory_exists"] = False
+        
+        return debug_info
+        
+    except Exception as e:
+        return {"error": str(e)}
 
 if __name__ == "__main__":
     import uvicorn

@@ -165,17 +165,44 @@ async def send_file_to_user(message, item_data: dict, user_id: str) -> bool:
     """
     try:
         if not item_data.get('file_path') or not item_data.get('id'):
+            logger.warning(f"Missing file_path or id in item_data: {item_data}")
             return False
             
+        item_id = item_data['id']
+        file_path = item_data['file_path']
+        logger.info(f"Attempting to send file for item {item_id} with path: {file_path}")
+        
         # Get file from backend
+        file_url = f"{BACKEND_URL}/file/{item_id}"
+        params = {"user_id": user_id}
+        
+        logger.info(f"Making request to: {file_url} with params: {params}")
+        
         response = requests.get(
-            f"{BACKEND_URL}/file/{item_data['id']}",
-            params={"user_id": user_id},
+            file_url,
+            params=params,
             timeout=30
         )
         
         if response.status_code != 200:
             logger.error(f"Failed to get file from backend: {response.status_code}")
+            logger.error(f"Response text: {response.text}")
+            
+            # Try debug endpoint to understand the issue
+            try:
+                debug_response = requests.get(
+                    f"{BACKEND_URL}/debug/file/{item_id}",
+                    params={"user_id": user_id},
+                    timeout=10
+                )
+                if debug_response.status_code == 200:
+                    debug_info = debug_response.json()
+                    logger.error(f"Debug info: {debug_info}")
+                else:
+                    logger.error(f"Debug endpoint also failed: {debug_response.status_code}")
+            except Exception as debug_e:
+                logger.error(f"Could not get debug info: {debug_e}")
+            
             return False
         
         # Create BytesIO object from response content
@@ -185,18 +212,23 @@ async def send_file_to_user(message, item_data: dict, user_id: str) -> bool:
         media_type = item_data.get('media_type', '')
         mime_type = item_data.get('mime_type', '')
         
+        logger.info(f"Successfully downloaded file, size: {len(response.content)} bytes")
+        logger.info(f"Media type: {media_type}, MIME type: {mime_type}")
+        
         # Send based on media type
         if media_type == 'image' or mime_type.startswith('image/'):
             await message.reply_photo(
                 photo=file_data,
                 caption=f"📸 {item_data.get('title', 'Image')}\n📝 {item_data.get('description', '')[:100]}..."
             )
+            logger.info("Sent file as photo")
         else:
             # Send as document
             await message.reply_document(
                 document=file_data,
                 caption=f"📄 {item_data.get('title', 'Document')}\n📝 {item_data.get('description', '')[:100]}..."
             )
+            logger.info("Sent file as document")
         
         return True
         
