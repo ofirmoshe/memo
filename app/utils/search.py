@@ -75,6 +75,14 @@ def search_by_embedding(db, user_id: str, query_embedding: List[float], top_k: i
                     "description": item.description,
                     "tags": item.tags,
                     "timestamp": item.timestamp,
+                    "content_type": item.content_type,
+                    "platform": item.platform,
+                    "media_type": item.media_type,
+                    "content_data": item.content_data,
+                    "file_path": item.file_path,
+                    "file_size": item.file_size,
+                    "mime_type": item.mime_type,
+                    "user_context": item.user_context,
                     "similarity_score": float(similarity)
                 })
             except Exception as e:
@@ -131,6 +139,14 @@ def search_by_keywords(db, user_id: str, keywords: List[str], top_k: int = 5) ->
             "description": item.description,
             "tags": item.tags,
             "timestamp": item.timestamp,
+            "content_type": item.content_type,
+            "platform": item.platform,
+            "media_type": item.media_type,
+            "content_data": item.content_data,
+            "file_path": item.file_path,
+            "file_size": item.file_size,
+            "mime_type": item.mime_type,
+            "user_context": item.user_context,
             "similarity_score": score
         })
     

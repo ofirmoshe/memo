@@ -52,12 +52,39 @@ def escape_markdown(text: str) -> str:
     if not text:
         return text
     
+    # Convert to string if not already
+    text = str(text)
+    
     # Escape special Markdown characters
     escape_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
     for char in escape_chars:
         text = text.replace(char, f'\\{char}')
     
+    # Handle problematic character sequences
+    text = text.replace('\\\\', '\\')  # Fix double escaping
+    
     return text
+
+def safe_markdown_format(text: str, max_length: int = 4000) -> str:
+    """
+    Safely format text for Telegram markdown with length limits.
+    
+    Args:
+        text: Text to format
+        max_length: Maximum length for the message
+        
+    Returns:
+        Safely formatted text
+    """
+    if not text:
+        return ""
+    
+    # Truncate if too long
+    if len(text) > max_length:
+        text = text[:max_length-3] + "..."
+    
+    # Escape markdown characters
+    return escape_markdown(text)
 
 def detect_user_intent(text: str) -> str:
     """
@@ -191,10 +218,16 @@ async def perform_search(user_id: str, query: str, message) -> None:
                 similarity = result.get('similarity_score', 0)
                 url = result.get('url', '')
                 media_type = result.get('media_type', 'url')
+                content_data = result.get('content_data', '')
                 
-                reply_text += f"**{i}\\. {escape_markdown(title)}**\n"
+                reply_text += f"**{i}. {escape_markdown(title)}**\n"
                 
-                if description:
+                # For text notes, show the original content instead of description
+                if media_type == 'text' and content_data:
+                    # Truncate long content
+                    content_preview = content_data[:150] + "..." if len(content_data) > 150 else content_data
+                    reply_text += f"📝 {escape_markdown(content_preview)}\n"
+                elif description:
                     # Truncate long descriptions
                     desc_preview = description[:150] + "..." if len(description) > 150 else description
                     reply_text += f"📝 {escape_markdown(desc_preview)}\n"
@@ -532,20 +565,44 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE, user_
         
         if response.status_code == 200:
             result = response.json()
-            reply_text = f"✅ **Image Analyzed Successfully!**\n\n"
-            reply_text += f"📌 **Title:** {result.get('title', 'N/A')}\n"
-            reply_text += f"📝 **Description:** {result.get('description', 'N/A')}\n"
-            reply_text += f"🏷️ **Tags:** {', '.join(result.get('tags', []))}\n"
+            
+            # Safely format the response to prevent Telegram parsing errors
+            title = safe_markdown_format(result.get('title', 'N/A'), 100)
+            description = safe_markdown_format(result.get('description', 'N/A'), 300)
+            tags = result.get('tags', [])
+            tags_text = safe_markdown_format(', '.join(tags[:5]), 100) if tags else 'None'
+            
+            reply_text = f"✅ **Image Analyzed Successfully!**\\n\\n"
+            reply_text += f"📌 **Title:** {title}\\n"
+            reply_text += f"📝 **Description:** {description}\\n"
+            reply_text += f"🏷️ **Tags:** {tags_text}\\n"
             
             # Show extracted text preview if available
             extracted_text = result.get('extracted_text_preview', '')
             if extracted_text:
-                reply_text += f"📋 **Extracted Text:** {extracted_text}\n"
+                extracted_preview = safe_markdown_format(extracted_text, 200)
+                reply_text += f"📋 **Extracted Text:** {extracted_preview}\\n"
             
             if caption:
-                reply_text += f"💭 **Your Context:** {caption}"
+                caption_safe = safe_markdown_format(caption, 150)
+                reply_text += f"💭 **Your Context:** {caption_safe}"
             
-            await message.reply_text(reply_text, parse_mode='Markdown')
+            # Send the message with error handling
+            try:
+                await message.reply_text(reply_text, parse_mode='Markdown')
+            except Exception as telegram_error:
+                logger.error(f"Telegram formatting error: {str(telegram_error)}")
+                # Fallback to plain text
+                plain_reply = f"✅ Image Analyzed Successfully!\n\n"
+                plain_reply += f"📌 Title: {result.get('title', 'N/A')}\n"
+                plain_reply += f"📝 Description: {result.get('description', 'N/A')}\n"
+                plain_reply += f"🏷️ Tags: {', '.join(tags[:5]) if tags else 'None'}\n"
+                if extracted_text:
+                    plain_reply += f"📋 Extracted Text: {extracted_text[:200]}...\n"
+                if caption:
+                    plain_reply += f"💭 Your Context: {caption}"
+                
+                await message.reply_text(plain_reply)
         else:
             await message.reply_text(f"❌ Error processing image: {response.text}")
             

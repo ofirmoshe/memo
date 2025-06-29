@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import base64
 from io import BytesIO
 from PIL import Image
+import re
 
 # Load environment variables
 load_dotenv()
@@ -114,21 +115,36 @@ def analyze_image_with_llm(image_path: str, user_context: str = None) -> Dict[st
 
 Please provide a comprehensive analysis that would be useful for a personal knowledge management system.
 
-Format your response as JSON:
+IMPORTANT: You must respond with ONLY valid JSON. Do not include any text before or after the JSON object.
+
+Format your response as a single JSON object:
 {{
     "extracted_text": "All text visible in the image",
-    "image_description": "Description of what's shown in the image",
+    "image_description": "Description of what's shown in the image", 
     "title": "Descriptive title for this content",
     "description": "Comprehensive summary of the content",
     "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
     "content_type": "receipt/document/screenshot/photo/etc",
     "platform": "personal",
     "key_information": ["key point 1", "key point 2", "etc"]
-}}"""
+}}
+
+Remember: Respond with ONLY the JSON object, no additional text."""
     
     try:
         response = get_llm_response(prompt, image_path)
-        result = json.loads(response)
+        
+        # Log the raw response for debugging
+        logger.info(f"Raw LLM response for image analysis: {response[:200]}...")
+        
+        # Try to extract JSON from the response if it's embedded in text
+        json_match = re.search(r'\{.*\}', response, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(0)
+        else:
+            json_str = response
+            
+        result = json.loads(json_str)
         
         # Validate required fields
         required_fields = ["extracted_text", "title", "description", "tags"]
@@ -144,13 +160,33 @@ Format your response as JSON:
         
     except json.JSONDecodeError as e:
         logger.error(f"Error parsing JSON response: {str(e)}")
+        logger.error(f"Raw response was: {response}")
+        
+        # Try to extract basic information from non-JSON response
+        fallback_title = "Image Content"
+        fallback_description = response[:500] if response else "Could not analyze image"
+        fallback_tags = ["image", "uploaded"]
+        
+        # Try to extract some basic info from the response text
+        if response:
+            # Look for common patterns in the response
+            if "receipt" in response.lower():
+                fallback_tags.append("receipt")
+                fallback_title = "Receipt"
+            elif "document" in response.lower():
+                fallback_tags.append("document")
+                fallback_title = "Document"
+            elif "screenshot" in response.lower():
+                fallback_tags.append("screenshot")
+                fallback_title = "Screenshot"
+        
         # Fallback analysis
         return {
-            "extracted_text": "Could not extract text",
-            "image_description": "Could not analyze image",
-            "title": "Image Content",
-            "description": f"Image uploaded from {image_path}",
-            "tags": ["image", "uploaded"],
+            "extracted_text": response[:200] if response else "Could not extract text",
+            "image_description": fallback_description,
+            "title": fallback_title,
+            "description": fallback_description,
+            "tags": fallback_tags,
             "content_type": "image",
             "platform": "personal",
             "key_information": []
