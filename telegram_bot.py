@@ -8,6 +8,7 @@ import requests
 import json
 from urllib.parse import urlparse
 from app.utils.file_processor import FileProcessor
+from io import BytesIO
 
 # Configure logging
 logging.basicConfig(
@@ -150,6 +151,59 @@ def detect_user_intent(text: str) -> str:
             # Short messages are likely greetings or unclear
             return 'greeting'
 
+async def send_file_to_user(message, item_data: dict, user_id: str) -> bool:
+    """
+    Send a file from search results back to the user.
+    
+    Args:
+        message: Telegram message object
+        item_data: Item data from search results
+        user_id: User ID
+        
+    Returns:
+        True if file was sent successfully, False otherwise
+    """
+    try:
+        if not item_data.get('file_path') or not item_data.get('id'):
+            return False
+            
+        # Get file from backend
+        response = requests.get(
+            f"{BACKEND_URL}/file/{item_data['id']}",
+            params={"user_id": user_id},
+            timeout=30
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"Failed to get file from backend: {response.status_code}")
+            return False
+        
+        # Create BytesIO object from response content
+        file_data = BytesIO(response.content)
+        file_data.name = item_data.get('title', 'file')
+        
+        media_type = item_data.get('media_type', '')
+        mime_type = item_data.get('mime_type', '')
+        
+        # Send based on media type
+        if media_type == 'image' or mime_type.startswith('image/'):
+            await message.reply_photo(
+                photo=file_data,
+                caption=f"📸 {item_data.get('title', 'Image')}\n📝 {item_data.get('description', '')[:100]}..."
+            )
+        else:
+            # Send as document
+            await message.reply_document(
+                document=file_data,
+                caption=f"📄 {item_data.get('title', 'Document')}\n📝 {item_data.get('description', '')[:100]}..."
+            )
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error sending file to user: {str(e)}")
+        return False
+
 async def perform_search(user_id: str, query: str, message) -> None:
     """Perform search and send results to user."""
     try:
@@ -166,13 +220,16 @@ async def perform_search(user_id: str, query: str, message) -> None:
         if response.status_code == 200:
             results = response.json()
             
-            if not results:
-                await message.reply_text(f"🔍 No results found for: {query}")
+            # Filter results by similarity threshold (0.3 minimum)
+            filtered_results = [result for result in results if result.get('similarity_score', 0) >= 0.3]
+            
+            if not filtered_results:
+                await message.reply_text(f"🔍 No relevant results found for: {query}\n💡 Try using different keywords or be more specific.")
                 return
             
             reply_text = f"🔍 Search Results for: {query}\n\n"
             
-            for i, result in enumerate(results, 1):
+            for i, result in enumerate(filtered_results, 1):
                 title = result.get('title', 'Untitled')
                 description = result.get('description', '')
                 tags = result.get('tags', [])
@@ -208,13 +265,13 @@ async def perform_search(user_id: str, query: str, message) -> None:
                 
                 reply_text += f"📊 Relevance: {similarity:.2f}\n\n"
             
-            # Split long messages if needed
+            # Send the text results first
             if len(reply_text) > 4000:
                 # Split into chunks
                 chunks = []
                 current_chunk = f"🔍 Search Results for: {query}\n\n"
                 
-                for i, result in enumerate(results, 1):
+                for i, result in enumerate(filtered_results, 1):
                     result_text = f"{i}. {result.get('title', 'Untitled')}\n"
                     if result.get('description'):
                         desc = result['description'][:100] + "..." if len(result['description']) > 100 else result['description']
@@ -239,6 +296,23 @@ async def perform_search(user_id: str, query: str, message) -> None:
                     await message.reply_text(chunk)
             else:
                 await message.reply_text(reply_text)
+            
+            # Now send files for results that have them (images and documents)
+            files_sent = 0
+            for result in filtered_results:
+                if result.get('media_type') in ['image', 'document'] and result.get('file_path'):
+                    if files_sent < 3:  # Limit to 3 files to avoid spam
+                        success = await send_file_to_user(message, result, user_id)
+                        if success:
+                            files_sent += 1
+                        # Small delay between file sends
+                        await asyncio.sleep(0.5)
+                    else:
+                        break
+            
+            if files_sent > 0:
+                await message.reply_text(f"📎 Sent {files_sent} file(s) from your search results!")
+                
         else:
             await message.reply_text(f"❌ Search failed: {response.text}")
             

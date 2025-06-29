@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Depends, Query, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from typing import List, Optional
 import os
 import logging
@@ -554,6 +555,36 @@ async def upload_file(
     except Exception as e:
         logger.error(f"Error uploading file for user {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
+
+@app.get("/file/{item_id}")
+async def get_file(item_id: str, user_id: str = Query(...), db: Session = Depends(get_db)):
+    """Serve a file by item ID."""
+    try:
+        # Get the item from database
+        item = db.query(Item).filter(Item.id == item_id, Item.user_id == user_id).first()
+        
+        if not item:
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        if not item.file_path:
+            raise HTTPException(status_code=404, detail="File path not available")
+        
+        # Check if file exists on disk
+        if not os.path.exists(item.file_path):
+            raise HTTPException(status_code=404, detail="File not found on disk")
+        
+        # Return the file
+        return FileResponse(
+            path=item.file_path,
+            filename=item.title or "download",
+            media_type=item.mime_type
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error serving file {item_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error serving file: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
