@@ -132,6 +132,20 @@ def extract_content(url: str) -> Dict[str, Any]:
     if content_type == ContentType.SOCIAL_MEDIA:
         logger.info(f"Identified as social media URL: {url}")
         content = scrape_social_media(url)
+        
+        # Check if social media scraping was successful
+        if not content.get("success", False):
+            logger.warning(f"Social media scraping failed: {content.get('error', 'Unknown error')}")
+            # Try fallback to general website scraping
+            logger.info("Attempting fallback to general website scraping")
+            content = scrape_website(url)
+            content["content_type"] = content_type.value
+            content["scraping_note"] = "Fell back to general website scraping due to social media extraction failure"
+        else:
+            # Remove the success field as it's not needed downstream
+            content.pop("success", None)
+            content.pop("error", None)
+        
         # Add metadata about the detected platform if available
         if subtype:
             content["platform"] = subtype
@@ -283,6 +297,20 @@ def extract_content_from_url(url: str) -> Dict[str, Any]:
         if content_type == ContentType.SOCIAL_MEDIA:
             logger.info(f"Identified as social media URL: {url}")
             content = scrape_social_media(url)
+            
+            # Check if social media scraping was successful
+            if not content.get("success", False):
+                logger.warning(f"Social media scraping failed: {content.get('error', 'Unknown error')}")
+                # Try fallback to general website scraping
+                logger.info("Attempting fallback to general website scraping")
+                content = scrape_website(url)
+                content["content_type"] = content_type.value
+                content["scraping_note"] = "Fell back to general website scraping due to social media extraction failure"
+            else:
+                # Remove the success field as it's not needed downstream
+                content.pop("success", None)
+                content.pop("error", None)
+            
             # Add metadata about the detected platform if available
             if subtype:
                 content["platform"] = subtype

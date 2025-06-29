@@ -393,14 +393,35 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 
                 if response.status_code == 200:
                     result = response.json()
-                    reply_text = f"✅ **Saved URL Successfully!**\n\n"
-                    reply_text += f"📌 **Title:** {result.get('title', 'N/A')}\n"
-                    reply_text += f"📝 **Description:** {result.get('description', 'N/A')}\n"
-                    reply_text += f"🏷️ **Tags:** {', '.join(result.get('tags', []))}\n"
-                    if user_context:
-                        reply_text += f"💭 **Your Context:** {user_context}"
                     
-                    await message.reply_text(reply_text, parse_mode='Markdown')
+                    # Safely format the response to prevent Telegram parsing errors
+                    title = safe_markdown_format(result.get('title', 'N/A'), 100)
+                    description = safe_markdown_format(result.get('description', 'N/A'), 300)
+                    tags = result.get('tags', [])
+                    tags_text = safe_markdown_format(', '.join(tags[:5]), 100) if tags else 'None'
+                    
+                    reply_text = f"✅ **Saved URL Successfully!**\\n\\n"
+                    reply_text += f"📌 **Title:** {title}\\n"
+                    reply_text += f"📝 **Description:** {description}\\n"
+                    reply_text += f"🏷️ **Tags:** {tags_text}\\n"
+                    if user_context:
+                        context_safe = safe_markdown_format(user_context, 150)
+                        reply_text += f"💭 **Your Context:** {context_safe}"
+                    
+                    # Send the message with error handling
+                    try:
+                        await message.reply_text(reply_text, parse_mode='Markdown')
+                    except Exception as telegram_error:
+                        logger.error(f"Telegram formatting error: {str(telegram_error)}")
+                        # Fallback to plain text
+                        plain_reply = f"✅ Saved URL Successfully!\n\n"
+                        plain_reply += f"📌 Title: {result.get('title', 'N/A')}\n"
+                        plain_reply += f"📝 Description: {result.get('description', 'N/A')}\n"
+                        plain_reply += f"🏷️ Tags: {', '.join(tags[:5]) if tags else 'None'}\n"
+                        if user_context:
+                            plain_reply += f"💭 Your Context: {user_context}"
+                        
+                        await message.reply_text(plain_reply)
                 else:
                     await message.reply_text(f"❌ Error processing URL: {response.text}")
                     
@@ -433,12 +454,30 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             
             if response.status_code == 200:
                 result = response.json()
-                reply_text = f"✅ **Content Saved Successfully!**\n\n"
-                reply_text += f"📌 **Title:** {result.get('title', 'N/A')}\n"
-                reply_text += f"📝 **Description:** {result.get('description', 'N/A')}\n"
-                reply_text += f"🏷️ **Tags:** {', '.join(result.get('tags', []))}"
                 
-                await message.reply_text(reply_text, parse_mode='Markdown')
+                # Safely format the response to prevent Telegram parsing errors
+                title = safe_markdown_format(result.get('title', 'N/A'), 100)
+                description = safe_markdown_format(result.get('description', 'N/A'), 300)
+                tags = result.get('tags', [])
+                tags_text = safe_markdown_format(', '.join(tags[:5]), 100) if tags else 'None'
+                
+                reply_text = f"✅ **Content Saved Successfully!**\\n\\n"
+                reply_text += f"📌 **Title:** {title}\\n"
+                reply_text += f"📝 **Description:** {description}\\n"
+                reply_text += f"🏷️ **Tags:** {tags_text}"
+                
+                # Send the message with error handling
+                try:
+                    await message.reply_text(reply_text, parse_mode='Markdown')
+                except Exception as telegram_error:
+                    logger.error(f"Telegram formatting error: {str(telegram_error)}")
+                    # Fallback to plain text
+                    plain_reply = f"✅ Content Saved Successfully!\n\n"
+                    plain_reply += f"📌 Title: {result.get('title', 'N/A')}\n"
+                    plain_reply += f"📝 Description: {result.get('description', 'N/A')}\n"
+                    plain_reply += f"🏷️ Tags: {', '.join(tags[:5]) if tags else 'None'}"
+                    
+                    await message.reply_text(plain_reply)
             else:
                 await message.reply_text(f"❌ Error saving content: {response.text}")
                 
@@ -508,15 +547,38 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE, us
         
         if response.status_code == 200:
             result = response.json()
-            reply_text = f"✅ **Document Saved Successfully!**\n\n"
-            reply_text += f"📁 **File:** {document.file_name}\n"
-            reply_text += f"📌 **Title:** {result.get('title', 'N/A')}\n"
-            reply_text += f"📝 **Description:** {result.get('description', 'N/A')}\n"
-            reply_text += f"🏷️ **Tags:** {', '.join(result.get('tags', []))}\n"
-            if caption:
-                reply_text += f"💭 **Your Context:** {caption}"
             
-            await message.reply_text(reply_text, parse_mode='Markdown')
+            # Safely format the response to prevent Telegram parsing errors
+            filename_safe = safe_markdown_format(document.file_name, 50)
+            title = safe_markdown_format(result.get('title', 'N/A'), 100)
+            description = safe_markdown_format(result.get('description', 'N/A'), 300)
+            tags = result.get('tags', [])
+            tags_text = safe_markdown_format(', '.join(tags[:5]), 100) if tags else 'None'
+            
+            reply_text = f"✅ **Document Saved Successfully!**\\n\\n"
+            reply_text += f"📁 **File:** {filename_safe}\\n"
+            reply_text += f"📌 **Title:** {title}\\n"
+            reply_text += f"📝 **Description:** {description}\\n"
+            reply_text += f"🏷️ **Tags:** {tags_text}\\n"
+            if caption:
+                caption_safe = safe_markdown_format(caption, 150)
+                reply_text += f"💭 **Your Context:** {caption_safe}"
+            
+            # Send the message with error handling
+            try:
+                await message.reply_text(reply_text, parse_mode='Markdown')
+            except Exception as telegram_error:
+                logger.error(f"Telegram formatting error: {str(telegram_error)}")
+                # Fallback to plain text
+                plain_reply = f"✅ Document Saved Successfully!\n\n"
+                plain_reply += f"📁 File: {document.file_name}\n"
+                plain_reply += f"📌 Title: {result.get('title', 'N/A')}\n"
+                plain_reply += f"📝 Description: {result.get('description', 'N/A')}\n"
+                plain_reply += f"🏷️ Tags: {', '.join(tags[:5]) if tags else 'None'}\n"
+                if caption:
+                    plain_reply += f"💭 Your Context: {caption}"
+                
+                await message.reply_text(plain_reply)
         else:
             await message.reply_text(f"❌ Error processing document: {response.text}")
             
