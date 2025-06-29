@@ -59,7 +59,7 @@ def is_social_media_url(url: str) -> bool:
         ,
         # Facebook
         {"domain": ["facebook.com", "www.facebook.com", "fb.com", "fb.watch", "m.facebook.com"],
-         "path_patterns": [r"/[\w\.]+/posts/", r"/watch/", r"/story.php", r"/video.php", r"/events/"]}
+         "path_patterns": [r"/[\w\.]+/posts/", r"/watch/", r"/story.php", r"/video.php", r"/events/", r"/share/"]}
         ,
         # LinkedIn
         {"domain": ["linkedin.com", "www.linkedin.com", "lnkd.in"],
