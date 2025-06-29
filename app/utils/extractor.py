@@ -258,4 +258,46 @@ def extract_and_save_content(user_id: str, url: str) -> Dict[str, Any]:
         logger.error(f"Error saving content to database: {str(e)}")
         raise
     finally:
-        db.close() 
+        db.close()
+
+def extract_content_from_url(url: str) -> Dict[str, Any]:
+    """
+    Extract content from a URL without saving to database.
+    
+    Args:
+        url: The URL to extract content from
+        
+    Returns:
+        Dict containing extracted content
+    """
+    logger.info(f"Extracting content from URL: {url}")
+    
+    try:
+        # Detect content type
+        content_type, subtype = content_detector.detect_content_type(url)
+        
+        # Log detected content type
+        logger.info(f"Detected content type: {content_type.value}, subtype: {subtype}")
+        
+        # Use appropriate scraper based on content type
+        if content_type == ContentType.SOCIAL_MEDIA:
+            logger.info(f"Identified as social media URL: {url}")
+            content = scrape_social_media(url)
+            # Add metadata about the detected platform if available
+            if subtype:
+                content["platform"] = subtype
+        else:
+            logger.info(f"Identified as general website URL: {url}")
+            content = scrape_website(url)
+            # Add metadata about the detected content type
+            content["content_type"] = content_type.value
+        
+        return content
+        
+    except Exception as e:
+        logger.error(f"Error extracting content from URL {url}: {str(e)}")
+        return {
+            "title": "Error extracting content",
+            "text": f"Failed to extract content from {url}",
+            "error": str(e)
+        } 

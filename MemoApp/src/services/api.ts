@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, UseMutationResult } from '@tanstack/react-query';
 import { config } from '../config';
 import { 
   SaveUrlRequest, 
@@ -231,6 +231,10 @@ const realCheckHealth = async (): Promise<boolean> => {
   }
 };
 
+const realDeleteItem = async (itemId: string, userId: string): Promise<void> => {
+  await axios.delete(`${API_BASE_URL}/items/${itemId}`, { params: { user_id: userId } });
+};
+
 // API functions with demo mode support
 export const searchContentFn = config.api.useDemoData ? demoSearchContent : realSearchContent;
 export const getItemsFn = config.api.useDemoData ? demoGetItems : realGetItems;
@@ -283,5 +287,11 @@ export const useHealthCheck = () => {
     queryKey: ['health'],
     queryFn: checkHealthFn,
     staleTime: 1000 * 60, // 1 minute
+  });
+};
+
+export const useDeleteItem = (): UseMutationResult<void, unknown, { itemId: string; userId: string }, unknown> => {
+  return useMutation(async ({ itemId, userId }: { itemId: string; userId: string }) => {
+    await realDeleteItem(itemId, userId);
   });
 }; 

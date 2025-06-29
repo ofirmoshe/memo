@@ -25,10 +25,10 @@ COPY . .
 VOLUME /app/data
 
 # Expose the port for FastAPI
-EXPOSE 8000
+EXPOSE 8001
 
 # Set environment variables
 ENV PYTHONPATH=/app
 
 # Default command (can be overridden in docker-compose)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"] 
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"] 

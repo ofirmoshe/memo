@@ -15,7 +15,7 @@ export const API_ENVIRONMENTS = {
 };
 
 // Select which environment to use
-export const CURRENT_API_ENV = 'TUNNEL'; // Options: 'LOCAL', 'LOCAL_NETWORK', 'TUNNEL', 'ANDROID_EMULATOR'
+export const CURRENT_API_ENV = 'LOCAL'; // Options: 'LOCAL', 'LOCAL_NETWORK', 'TUNNEL', 'ANDROID_EMULATOR'
 
 export const config = {
   api: {

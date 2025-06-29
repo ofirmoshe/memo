@@ -19,6 +19,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { getPreviewImageUrl, getFaviconUrl, getPlaceholderImageUrl } from '../utils/previewUtils';
 import { getCachedImage, cacheImage } from '../utils/imageCache';
 import theme from '../config/theme';
+import { useDeleteItem } from '../services/api';
 
 type ItemDetailScreenRouteProp = RouteProp<RootStackParamList, 'ItemDetail'>;
 type ItemDetailScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'ItemDetail'>;
@@ -71,6 +72,8 @@ const ItemDetailScreen = () => {
   const [previewUrl, setPreviewUrl] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
+  
+  const { mutate: deleteItem, isPending: isDeleting } = useDeleteItem();
   
   // Load preview image
   React.useEffect(() => {
@@ -179,6 +182,30 @@ const ItemDetailScreen = () => {
     }
   };
   
+  // Handle delete
+  const handleDelete = () => {
+    if (isDeleting) return;
+    // Show confirmation dialog
+    if (Platform.OS === 'web' || Platform.OS === 'ios' || Platform.OS === 'android') {
+      if (window.confirm) {
+        if (!window.confirm('Are you sure you want to delete this memory? This action cannot be undone.')) return;
+      } else if (global.confirm) {
+        if (!global.confirm('Are you sure you want to delete this memory? This action cannot be undone.')) return;
+      }
+    }
+    deleteItem(
+      { itemId: item.id, userId: item.user_id },
+      {
+        onSuccess: () => {
+          navigation.goBack();
+        },
+        onError: (error) => {
+          alert('Failed to delete memory.');
+        },
+      }
+    );
+  };
+  
   return (
     <SafeAreaView style={styles.container} edges={['top', 'right', 'left', 'bottom']}>
       {/* Header */}
@@ -279,13 +306,21 @@ const ItemDetailScreen = () => {
         
         {/* Bottom Action Bar */}
         <View style={styles.actionBar}>
-          <TouchableOpacity style={styles.actionButton} onPress={handleOpenUrl}>
+          <TouchableOpacity style={styles.actionButton} onPress={handleOpenUrl} disabled={isDeleting}>
             <Icon name="open-outline" size={20} color="#FFFFFF" />
             <Text style={styles.actionButtonText}>Open</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton} onPress={handleShare}>
+          <TouchableOpacity style={styles.actionButton} onPress={handleShare} disabled={isDeleting}>
             <Icon name="share-social-outline" size={20} color="#FFFFFF" />
             <Text style={styles.actionButtonText}>Share</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.actionButton, { backgroundColor: theme.colors.error }]} onPress={handleDelete} disabled={isDeleting}>
+            {isDeleting ? (
+              <ActivityIndicator size="small" color="#FFF" />
+            ) : (
+              <Icon name="trash-outline" size={20} color="#FFFFFF" />
+            )}
+            <Text style={styles.actionButtonText}>Delete</Text>
           </TouchableOpacity>
         </View>
       </View>

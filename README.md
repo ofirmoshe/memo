@@ -63,10 +63,10 @@ python -m app.main
 
 Or via uvicorn:
 ```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
 ```
 
-The API server will be available at `http://localhost:8000`.
+The API server will be available at `http://localhost:8001`.
 
 ### Using the CLI
 
@@ -96,7 +96,7 @@ docker build -t memora .
 ### Running with Docker
 
 ```bash
-docker run -d -p 8000:8000 --name memora-app \
+docker run -d -p 8001:8001 --name memora-app \
   -e OPENAI_API_KEY=your_openai_api_key_here \
   -v $(pwd)/data:/app/data \
   memora
@@ -116,38 +116,38 @@ docker run -d -p 8000:8000 --name memora-app \
 
 Access the Swagger UI documentation at:
 ```
-http://localhost:8000/docs
+http://localhost:8001/docs
 ```
 
 ### Testing with cURL
 
 Health check:
 ```bash
-curl -X GET "http://localhost:8000/health"
+curl -X GET "http://localhost:8001/health"
 ```
 
 Save URL (replace with your values):
 ```bash
-curl -X POST "http://localhost:8000/extract_and_save" \
+curl -X POST "http://localhost:8001/extract_and_save" \
   -H "Content-Type: application/json" \
   -d '{"user_id": "user1", "url": "https://example.com"}'
 ```
 
 Search content:
 ```bash
-curl -X GET "http://localhost:8000/search?user_id=user1&query=example&top_k=5"
+curl -X GET "http://localhost:8001/search?user_id=user1&query=example&top_k=5"
 ```
 
 Search with filters:
 ```bash
-curl -X GET "http://localhost:8000/search?user_id=user1&query=video&content_type=social_media&platform=youtube"
+curl -X GET "http://localhost:8001/search?user_id=user1&query=video&content_type=social_media&platform=youtube"
 ```
 
 ### Testing with PowerShell
 
 Health check:
 ```powershell
-Invoke-WebRequest -Method GET -Uri "http://localhost:8000/health" | Select-Object -ExpandProperty Content
+Invoke-WebRequest -Method GET -Uri "http://localhost:8001/health" | Select-Object -ExpandProperty Content
 ```
 
 Save URL:
@@ -157,14 +157,14 @@ $body = @{
     url = "https://example.com"
 } | ConvertTo-Json
 
-Invoke-WebRequest -Method POST -Uri "http://localhost:8000/extract_and_save" `
+Invoke-WebRequest -Method POST -Uri "http://localhost:8001/extract_and_save" `
   -Headers @{"Content-Type"="application/json"} `
   -Body $body
 ```
 
 Search content:
 ```powershell
-Invoke-WebRequest -Method GET -Uri "http://localhost:8000/search?user_id=user1&query=example&top_k=5" | Select-Object -ExpandProperty Content
+Invoke-WebRequest -Method GET -Uri "http://localhost:8001/search?user_id=user1&query=example&top_k=5" | Select-Object -ExpandProperty Content
 ```
 
 ## Troubleshooting

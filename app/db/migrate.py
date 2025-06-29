@@ -154,6 +154,67 @@ def migrate_sqlite_db():
             logger.info("platform column added successfully.")
         else:
             logger.info("platform column already exists.")
+            
+        # Add new media-related columns
+        new_columns = [
+            ("media_type", "TEXT NOT NULL DEFAULT 'url'"),
+            ("content_data", "TEXT"),
+            ("file_path", "TEXT"),
+            ("file_size", "INTEGER"),
+            ("mime_type", "TEXT"),
+            ("user_context", "TEXT")
+        ]
+        
+        for column_name, column_def in new_columns:
+            if column_name not in column_names:
+                logger.info(f"Adding {column_name} column to items table...")
+                cursor.execute(f"ALTER TABLE items ADD COLUMN {column_name} {column_def}")
+                if column_name == "media_type":
+                    cursor.execute("CREATE INDEX ix_items_media_type ON items (media_type)")
+                logger.info(f"{column_name} column added successfully.")
+            else:
+                logger.info(f"{column_name} column already exists.")
+                
+        # Make url column nullable for existing records
+        cursor.execute("PRAGMA foreign_keys=off")
+        cursor.execute("""
+            CREATE TABLE items_new (
+                id TEXT PRIMARY KEY,
+                user_id TEXT,
+                url TEXT,
+                title TEXT,
+                description TEXT,
+                tags TEXT,
+                timestamp DATETIME,
+                embedding TEXT,
+                content_type TEXT,
+                platform TEXT,
+                media_type TEXT NOT NULL DEFAULT 'url',
+                content_data TEXT,
+                file_path TEXT,
+                file_size INTEGER,
+                mime_type TEXT,
+                user_context TEXT,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )
+        """)
+        cursor.execute("""
+            INSERT INTO items_new SELECT 
+                id, user_id, url, title, description, tags, timestamp, embedding, 
+                content_type, platform, 
+                COALESCE(media_type, 'url'),
+                content_data, file_path, file_size, mime_type, user_context
+            FROM items
+        """)
+        cursor.execute("DROP TABLE items")
+        cursor.execute("ALTER TABLE items_new RENAME TO items")
+        cursor.execute("PRAGMA foreign_keys=on")
+        
+        # Recreate indexes
+        cursor.execute("CREATE INDEX ix_items_url ON items (url)")
+        cursor.execute("CREATE INDEX ix_items_content_type ON items (content_type)")
+        cursor.execute("CREATE INDEX ix_items_platform ON items (platform)")
+        cursor.execute("CREATE INDEX ix_items_media_type ON items (media_type)")
         
         # Commit changes
         conn.commit()

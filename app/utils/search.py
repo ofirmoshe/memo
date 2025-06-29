@@ -368,4 +368,118 @@ def get_items_by_tag(user_id: str, tag: str, limit: int = 100, offset: int = 0) 
         logger.error(f"Error getting items by tag: {str(e)}")
         raise
     finally:
-        db.close() 
+        db.close()
+
+def delete_item(user_id: str, item_id: str) -> bool:
+    """
+    Delete an item by item_id for a specific user.
+    Args:
+        user_id: User ID
+        item_id: Item ID
+    Returns:
+        True if deleted, False if not found
+    """
+    logger.info(f"Deleting item {item_id} for user {user_id}")
+    db = SessionLocal()
+    try:
+        item = db.query(Item).filter(Item.id == item_id, Item.user_id == user_id).first()
+        if not item:
+            return False
+        db.delete(item)
+        db.commit()
+        return True
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting item: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+def search_items(db, user_id: str, query: str, top_k: int = 5, content_type: str = None, 
+                platform: str = None, media_type: str = None, similarity_threshold: float = 0.0) -> List[Dict[str, Any]]:
+    """
+    Search for items using semantic similarity with enhanced filtering.
+    
+    Args:
+        db: Database session
+        user_id: User ID to search for
+        query: Search query
+        top_k: Number of results to return
+        content_type: Filter by content type
+        platform: Filter by platform
+        media_type: Filter by media type (url, text, image, document)
+        similarity_threshold: Minimum similarity score
+        
+    Returns:
+        List of matching items with similarity scores
+    """
+    try:
+        # Generate embedding for the query
+        query_embedding = generate_embedding(query)
+        
+        # Build base query
+        db_query = db.query(Item).filter(Item.user_id == user_id)
+        
+        # Apply filters
+        if content_type:
+            db_query = db_query.filter(Item.content_type == content_type)
+        if platform:
+            db_query = db_query.filter(Item.platform == platform)
+        if media_type:
+            db_query = db_query.filter(Item.media_type == media_type)
+        
+        # Get all matching items
+        items = db_query.all()
+        
+        if not items:
+            return []
+        
+        # Calculate similarities
+        results = []
+        for item in items:
+            if item.embedding:
+                try:
+                    # Calculate cosine similarity
+                    similarity = cosine_similarity([query_embedding], [item.embedding])[0][0]
+                    
+                    if similarity >= similarity_threshold:
+                        results.append({
+                            'item': item,
+                            'similarity': similarity
+                        })
+                except Exception as e:
+                    logger.error(f"Error calculating similarity for item {item.id}: {str(e)}")
+                    continue
+        
+        # Sort by similarity and take top_k
+        results.sort(key=lambda x: x['similarity'], reverse=True)
+        results = results[:top_k]
+        
+        # Convert to response format
+        response = []
+        for result in results:
+            item = result['item']
+            response.append({
+                'id': item.id,
+                'user_id': item.user_id,
+                'url': item.url,
+                'title': item.title,
+                'description': item.description,
+                'tags': item.tags or [],
+                'timestamp': item.timestamp,
+                'content_type': item.content_type,
+                'platform': item.platform,
+                'media_type': item.media_type,
+                'content_data': item.content_data,
+                'file_path': item.file_path,
+                'file_size': item.file_size,
+                'mime_type': item.mime_type,
+                'user_context': item.user_context,
+                'similarity_score': result['similarity']
+            })
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error searching items: {str(e)}")
+        raise 

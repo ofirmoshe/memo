@@ -58,7 +58,7 @@ class Item(Base):
 
     id = Column(String, primary_key=True, index=True)
     user_id = Column(String, ForeignKey("users.id"))
-    url = Column(String, index=True)
+    url = Column(String, index=True, nullable=True)  # Make nullable for non-URL content
     title = Column(String)
     description = Column(Text)  # Using Text instead of String for longer content
     tags = Column(JSON)  # List of tags
@@ -67,18 +67,34 @@ class Item(Base):
     content_type = Column(String, index=True, nullable=True)  # Type of content (social_media, news_article, etc.)
     platform = Column(String, index=True, nullable=True)  # Platform name if applicable (youtube, tiktok, etc.)
     
+    # New fields for multi-media support
+    media_type = Column(String, index=True, nullable=False, default="url")  # url, text, image, document
+    content_data = Column(Text, nullable=True)  # For storing text content directly
+    file_path = Column(String, nullable=True)  # Path to stored file (images, documents)
+    file_size = Column(Integer, nullable=True)  # File size in bytes
+    mime_type = Column(String, nullable=True)  # MIME type for files
+    user_context = Column(Text, nullable=True)  # User-provided context/description
+    
     user = relationship("User", back_populates="items")
     
-    def __init__(self, user_id, url, title, description, tags, embedding, content_type=None, platform=None):
+    def __init__(self, user_id, url=None, title=None, description=None, tags=None, embedding=None, 
+                 content_type=None, platform=None, media_type="url", content_data=None, 
+                 file_path=None, file_size=None, mime_type=None, user_context=None):
         self.id = str(uuid.uuid4())
         self.user_id = user_id
         self.url = url
         self.title = title
         self.description = description
-        self.tags = tags
+        self.tags = tags or []
         self.embedding = embedding
         self.content_type = content_type
         self.platform = platform
+        self.media_type = media_type
+        self.content_data = content_data
+        self.file_path = file_path
+        self.file_size = file_size
+        self.mime_type = mime_type
+        self.user_context = user_context
 
 def init_db():
     """Initialize the database by creating all tables."""

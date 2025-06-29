@@ -4,7 +4,7 @@ services:
   memora:
     build: .
     ports:
-      - "8000:8000"
+      - "8001:8001"
     volumes:
       - ./data:/app/data
     env_file:
@@ -23,8 +23,23 @@ services:
         done &&
         echo 'PostgreSQL is up - initializing database...' &&
         python -m app.cli db-migrate --init &&
-        uvicorn app.main:app --host 0.0.0.0 --port 8000
+        uvicorn app.main:app --host 0.0.0.0 --port 8001
       "
+  
+  telegram-bot:
+    build: .
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/memora
+      - BACKEND_URL=http://memora:8001
+    depends_on:
+      - memora
+      - db
+    restart: unless-stopped
+    command: python start_telegram_bot.py
   
   db:
     image: postgres:15
