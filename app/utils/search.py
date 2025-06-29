@@ -15,13 +15,30 @@ def cosine_similarity(a, b):
     Calculate cosine similarity between two vectors.
     
     Args:
-        a: First vector
-        b: Second vector
+        a: First vector (can be list or numpy array)
+        b: Second vector (can be list or numpy array)
         
     Returns:
         float: Cosine similarity
     """
-    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+    # Convert to numpy arrays and flatten if needed
+    a = np.array(a).flatten()
+    b = np.array(b).flatten()
+    
+    # Check if arrays have the same shape
+    if a.shape != b.shape:
+        raise ValueError(f"Vector shapes don't match: {a.shape} vs {b.shape}")
+    
+    # Calculate cosine similarity
+    dot_product = np.dot(a, b)
+    norm_a = np.linalg.norm(a)
+    norm_b = np.linalg.norm(b)
+    
+    # Avoid division by zero
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+        
+    return dot_product / (norm_a * norm_b)
 
 def search_by_embedding(db, user_id: str, query_embedding: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
     """
@@ -42,17 +59,27 @@ def search_by_embedding(db, user_id: str, query_embedding: List[float], top_k: i
     # Calculate similarity for each item
     results = []
     for item in items:
-        similarity = cosine_similarity(query_embedding, item.embedding)
-        results.append({
-            "id": item.id,
-            "user_id": item.user_id,
-            "url": item.url,
-            "title": item.title,
-            "description": item.description,
-            "tags": item.tags,
-            "timestamp": item.timestamp,
-            "similarity_score": float(similarity)
-        })
+        if item.embedding:
+            try:
+                # Ensure embedding is a valid list of numbers
+                if not isinstance(item.embedding, list) or not item.embedding:
+                    logger.warning(f"Invalid embedding for item {item.id}: not a list or empty")
+                    continue
+                    
+                similarity = cosine_similarity(query_embedding, item.embedding)
+                results.append({
+                    "id": item.id,
+                    "user_id": item.user_id,
+                    "url": item.url,
+                    "title": item.title,
+                    "description": item.description,
+                    "tags": item.tags,
+                    "timestamp": item.timestamp,
+                    "similarity_score": float(similarity)
+                })
+            except Exception as e:
+                logger.error(f"Error calculating similarity for item {item.id}: {str(e)}")
+                continue
     
     # Sort by similarity (descending)
     results.sort(key=lambda x: x["similarity_score"], reverse=True)
@@ -439,8 +466,13 @@ def search_items(db, user_id: str, query: str, top_k: int = 5, content_type: str
         for item in items:
             if item.embedding:
                 try:
+                    # Ensure embedding is a valid list of numbers
+                    if not isinstance(item.embedding, list) or not item.embedding:
+                        logger.warning(f"Invalid embedding for item {item.id}: not a list or empty")
+                        continue
+                        
                     # Calculate cosine similarity
-                    similarity = cosine_similarity([query_embedding], [item.embedding])[0][0]
+                    similarity = cosine_similarity(query_embedding, item.embedding)
                     
                     if similarity >= similarity_threshold:
                         results.append({

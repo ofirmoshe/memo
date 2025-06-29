@@ -2,11 +2,14 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-# Install system dependencies including PostgreSQL client
+# Install system dependencies including PostgreSQL client and yt-dlp dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
     postgresql-client \
     libpq-dev \
+    ffmpeg \
+    wget \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first to leverage Docker cache
