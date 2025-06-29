@@ -21,9 +21,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create a volume for data
-VOLUME /app/data
-
 # Expose the port for FastAPI (Railway will use PORT env var, local uses 8001)
 EXPOSE 8001
 ENV PORT=8001

@@ -20,12 +20,13 @@ Deploy to Railway for a stable, scalable cloud deployment:
 2. **One-Click Setup**: Import from GitHub → Add PostgreSQL → Set environment variables
 3. **Auto-Scaling**: Automatically scales with your user base
 4. **Cost-Effective**: Free tier covers testing, pay-as-you-grow
+5. **Persistent Storage**: Optional Railway volumes for file storage
 
 **Required Environment Variables for Railway:**
 - `OPENAI_API_KEY` - Your OpenAI API key
 - `TELEGRAM_BOT_TOKEN` - Your Telegram bot token
 
-Railway automatically provides `DATABASE_URL` and `PORT`.
+Railway automatically provides `DATABASE_URL` and `PORT`. For file storage, you can optionally add a Railway volume mounted at `/app/data`.
 
 ### 🐳 Local Docker Development
 

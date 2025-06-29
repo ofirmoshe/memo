@@ -47,6 +47,13 @@ Your repository is already configured for Railway deployment with:
    - `PORT` (assigned by Railway)
    - `RAILWAY_ENVIRONMENT=production`
 
+5. **Add Railway Volume (Optional for file storage):**
+   - If you need persistent file storage beyond the database
+   - Go to your main service settings
+   - Click "Volumes" tab
+   - Add a volume with mount path `/app/data`
+   - This provides persistent storage for uploaded files
+
 ### 3. Deploy and Monitor
 
 1. **Automatic Deployment:**
@@ -60,6 +67,24 @@ Your repository is already configured for Railway deployment with:
 3. **Test Telegram Bot:**
    - Your Telegram bot should now be running on Railway
    - Send a message to your bot to test functionality
+
+## Persistent Storage on Railway
+
+### Database Storage
+- All user data, content, and metadata are stored in the PostgreSQL database
+- Railway's managed PostgreSQL provides automatic backups and persistence
+
+### File Storage (Optional)
+- For uploaded files (images, documents), you can add a Railway volume:
+  1. Go to your service settings in Railway dashboard
+  2. Navigate to "Volumes" tab  
+  3. Add volume with mount path: `/app/data`
+  4. This creates persistent storage that survives deployments
+
+### Alternative: Cloud Storage
+- For production, consider using cloud storage (AWS S3, Google Cloud Storage)
+- More scalable than local file storage
+- Can be integrated by updating file upload endpoints
 
 ## Environment Variable Details
 
@@ -107,6 +132,7 @@ The app automatically detects the environment:
 ### Build Issues
 - Check Railway build logs for errors
 - Ensure all required files are committed to GitHub
+- Verify Dockerfile doesn't use banned keywords (like `VOLUME`)
 
 ### Database Issues
 - Verify PostgreSQL service is running in Railway
