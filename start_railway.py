@@ -41,7 +41,7 @@ def start_telegram_bot():
     logger.info("🤖 Starting Telegram bot...")
     try:
         # Wait a bit for the backend to start
-        time.sleep(5)
+        time.sleep(10)
         
         # Import and run the telegram bot
         from telegram_bot import main as telegram_main
@@ -64,12 +64,16 @@ def main():
     signal.signal(signal.SIGTERM, signal_handler)
     
     # Check required environment variables
-    required_vars = ["OPENAI_API_KEY", "TELEGRAM_BOT_TOKEN", "DATABASE_URL"]
+    required_vars = ["OPENAI_API_KEY", "TELEGRAM_BOT_TOKEN"]
     missing_vars = [var for var in required_vars if not os.getenv(var)]
     
     if missing_vars:
         logger.error(f"❌ Missing required environment variables: {missing_vars}")
         sys.exit(1)
+    
+    # DATABASE_URL is optional - if not provided, SQLite will be used
+    if not os.getenv("DATABASE_URL"):
+        logger.info("⚠️ DATABASE_URL not set, using SQLite database")
     
     logger.info("✅ All required environment variables are set")
     

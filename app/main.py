@@ -429,58 +429,79 @@ async def get_user_items(user_id: str, limit: int = 50, offset: int = 0, media_t
 @app.get("/health")
 async def health_check():
     """
-    Health check endpoint with detailed system information for debugging.
+    Simple health check endpoint for Railway deployment.
+    """
+    try:
+        # Basic health check without database dependency during startup
+        return {
+            "status": "ok",
+            "timestamp": datetime.now().isoformat(),
+            "service": "memora-api",
+            "version": "0.1.0"
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Service unhealthy")
+
+@app.get("/health/detailed")
+async def detailed_health_check():
+    """
+    Detailed health check endpoint with system information for debugging.
     """
     try:
         # Get database connection status
-        db = next(get_db())
-        db_status = "connected"
-        db.close()
-    except Exception as e:
-        db_status = f"error: {str(e)}"
-    
-    # Get system information
-    hostname = socket.gethostname()
-    ip_address = socket.gethostbyname(hostname)
-    
-    # Get Docker container information if available
-    in_docker = os.path.exists("/.dockerenv")
-    
-    # Get memory usage
-    memory = psutil.virtual_memory()
-    memory_usage = {
-        "total": f"{memory.total / (1024 * 1024 * 1024):.2f} GB",
-        "available": f"{memory.available / (1024 * 1024 * 1024):.2f} GB",
-        "percent": f"{memory.percent}%"
-    }
-    
-    # Get disk usage
-    disk = psutil.disk_usage('/')
-    disk_usage = {
-        "total": f"{disk.total / (1024 * 1024 * 1024):.2f} GB",
-        "free": f"{disk.free / (1024 * 1024 * 1024):.2f} GB",
-        "percent": f"{disk.percent}%"
-    }
-    
-    return {
-        "status": "ok",
-        "timestamp": datetime.now().isoformat(),
-        "server": {
-            "hostname": hostname,
-            "ip": ip_address,
-            "platform": platform.platform(),
-            "python": platform.python_version(),
-            "in_docker": in_docker
-        },
-        "database": {
-            "status": db_status
-        },
-        "resources": {
-            "memory": memory_usage,
-            "disk": disk_usage,
-            "cpu_percent": psutil.cpu_percent(interval=0.1)
+        try:
+            db = next(get_db())
+            db_status = "connected"
+            db.close()
+        except Exception as e:
+            db_status = f"error: {str(e)}"
+        
+        # Get system information
+        hostname = socket.gethostname()
+        ip_address = socket.gethostbyname(hostname)
+        
+        # Get Docker container information if available
+        in_docker = os.path.exists("/.dockerenv")
+        
+        # Get memory usage
+        memory = psutil.virtual_memory()
+        memory_usage = {
+            "total": f"{memory.total / (1024 * 1024 * 1024):.2f} GB",
+            "available": f"{memory.available / (1024 * 1024 * 1024):.2f} GB",
+            "percent": f"{memory.percent}%"
         }
-    }
+        
+        # Get disk usage
+        disk = psutil.disk_usage('/')
+        disk_usage = {
+            "total": f"{disk.total / (1024 * 1024 * 1024):.2f} GB",
+            "free": f"{disk.free / (1024 * 1024 * 1024):.2f} GB",
+            "percent": f"{disk.percent}%"
+        }
+        
+        return {
+            "status": "ok",
+            "timestamp": datetime.now().isoformat(),
+            "server": {
+                "hostname": hostname,
+                "ip": ip_address,
+                "platform": platform.platform(),
+                "python": platform.python_version(),
+                "in_docker": in_docker
+            },
+            "database": {
+                "status": db_status
+            },
+            "resources": {
+                "memory": memory_usage,
+                "disk": disk_usage,
+                "cpu_percent": psutil.cpu_percent(interval=0.1)
+            }
+        }
+    except Exception as e:
+        logger.error(f"Detailed health check failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
 
 @app.post("/upload-file")
 async def upload_file(

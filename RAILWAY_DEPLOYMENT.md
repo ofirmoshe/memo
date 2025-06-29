@@ -17,6 +17,7 @@ Your repository is already configured for Railway deployment with:
 - ✅ `start_railway.py` - Railway-specific startup script
 - ✅ `Dockerfile` - Updated for Railway compatibility
 - ✅ Dynamic backend URL detection in `telegram_bot.py`
+- ✅ Automatic database initialization (no manual migration needed)
 
 ### 2. Deploy to Railway
 
@@ -58,11 +59,13 @@ Your repository is already configured for Railway deployment with:
 
 1. **Automatic Deployment:**
    - Railway will automatically build and deploy your app
-   - Monitor the build logs in the Railway dashboard
+   - The database tables will be created automatically on first startup
+   - No manual migration needed - everything is handled automatically
 
 2. **Check Deployment:**
    - Once deployed, you'll get a URL like `https://your-app-name.railway.app`
    - Visit `https://your-app-name.railway.app/health` to verify the API is running
+   - Use `https://your-app-name.railway.app/health/detailed` for detailed system info
 
 3. **Test Telegram Bot:**
    - Your Telegram bot should now be running on Railway
@@ -137,16 +140,32 @@ The app automatically detects the environment:
 ### Database Issues
 - Verify PostgreSQL service is running in Railway
 - Check that `DATABASE_URL` is automatically set
+- Database tables are created automatically - no manual migration needed
+- If you see migration loops, ensure `railway.json` doesn't include migration commands
+
+### Health Check Issues
+- Visit `/health` endpoint to verify basic service health
+- Use `/health/detailed` for comprehensive system diagnostics
+- Health check timeout is set to 100 seconds to allow for startup
+- If health checks fail, check Railway service logs for startup errors
 
 ### Bot Not Responding
 - Verify `TELEGRAM_BOT_TOKEN` is correct
 - Check Railway service logs for errors
 - Ensure both backend and bot processes are running
+- Bot waits 10 seconds for backend to start - check logs for timing issues
 
 ### Environment Variable Issues
 - Double-check variable names (case-sensitive)
 - Ensure no extra spaces in values
 - Verify OpenAI API key is valid
+- `DATABASE_URL` is automatically provided by Railway PostgreSQL service
+
+### Service Startup Issues
+- Check Railway logs for detailed error messages
+- Verify all required environment variables are set
+- Ensure no migration commands are running in loops
+- Database initialization happens automatically via FastAPI startup event
 
 ## Scaling and Costs
 
