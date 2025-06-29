@@ -131,7 +131,7 @@ def scrape_social_media(url: str) -> Dict[str, Any]:
                     logger.warning(f"Enhanced yt-dlp command failed: {str(e)}")
             
             # Approach 3: Platform-specific optimizations
-            if not success and platform in ["TikTok", "Instagram"]:
+            if not success and platform in ["TikTok", "Instagram", "Facebook", "YouTube"]:
                 try:
                     # Clean up temp directory
                     for f in os.listdir(temp_dir):
@@ -147,16 +147,34 @@ def scrape_social_media(url: str) -> Dict[str, Any]:
                         "--no-playlist",
                         "--socket-timeout", "8",
                         "--retries", "1",
-                        "--add-header", "User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
                     ]
                     
+                    # Platform-specific user agents and configurations
                     if platform == "TikTok":
                         platform_cmd.extend([
+                            "--add-header", "User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
                             "--extractor-args", "tiktok:api_hostname=api16-normal-c-useast1a.tiktokv.com"
                         ])
                     elif platform == "Instagram":
                         platform_cmd.extend([
+                            "--add-header", "User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
                             "--extractor-args", "instagram:include_comments=false"
+                        ])
+                    elif platform == "Facebook":
+                        platform_cmd.extend([
+                            "--add-header", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                            "--add-header", "Accept-Language: en-US,en;q=0.9",
+                            "--add-header", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                            "--extractor-args", "facebook:legacy_api=false",
+                            "--extractor-args", "facebook:tab=timeline",
+                        ])
+                    elif platform == "YouTube":
+                        platform_cmd.extend([
+                            "--add-header", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                            "--youtube-skip-dash-manifest",
+                            "--extractor-args", "youtube:player_client=web,mweb",
+                            "--extractor-args", "youtube:player_skip=webpage,configs",
+                            "--extractor-args", "youtube:skip=translated_subs",
                         ])
                     
                     platform_cmd.extend(["-o", f"{temp_dir}/%(id)s", url])
@@ -186,6 +204,19 @@ def scrape_social_media(url: str) -> Dict[str, Any]:
                 # For YouTube, try oEmbed API
                 if platform == "YouTube":
                     result = extract_youtube_content(url, temp_dir, force_alternative=True)
+                    if result:
+                        result["success"] = True
+                        return result
+                
+                # For Facebook, try oEmbed API
+                if platform == "Facebook":
+                    result = extract_facebook_oembed(url)
+                    if result:
+                        result["success"] = True
+                        return result
+                    
+                    # If oEmbed fails, try URL-based extraction as final fallback
+                    result = extract_facebook_info_from_url(url)
                     if result:
                         result["success"] = True
                         return result
@@ -305,7 +336,104 @@ def try_alternative_extraction(url: str, platform: str) -> Dict[str, Any]:
     try:
         logger.info(f"Trying alternative extraction for {platform}")
         
-        # Basic web scraping approach
+        # Platform-specific headers and approaches
+        if platform == "Facebook":
+            # Facebook-specific alternative extraction
+            headers = {
+                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5",
+                "Accept-Encoding": "gzip, deflate",
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "none",
+            }
+            
+            # Try mobile Facebook URL transformation
+            mobile_url = url.replace("www.facebook.com", "m.facebook.com")
+            logger.info(f"Trying mobile Facebook URL: {mobile_url}")
+            
+            try:
+                response = requests.get(mobile_url, headers=headers, timeout=15, allow_redirects=True)
+                if response.status_code == 200:
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup(response.content, 'html.parser')
+                    
+                    # Facebook mobile-specific extraction
+                    title = ""
+                    description = ""
+                    
+                    # Try various Facebook-specific selectors
+                    title_selectors = [
+                        'meta[property="og:title"]',
+                        'meta[name="twitter:title"]',
+                        'title',
+                        '[data-testid="post_message"]',
+                        '.story_body_container',
+                    ]
+                    
+                    for selector in title_selectors:
+                        element = soup.select_one(selector)
+                        if element:
+                            if element.name == 'meta':
+                                title = element.get('content', '')
+                            else:
+                                title = element.get_text(strip=True)
+                            if title:
+                                break
+                    
+                    # Try to get description
+                    desc_selectors = [
+                        'meta[property="og:description"]',
+                        'meta[name="description"]',
+                        'meta[name="twitter:description"]',
+                        '[data-testid="post_message"]',
+                        '.userContent',
+                    ]
+                    
+                    for selector in desc_selectors:
+                        element = soup.select_one(selector)
+                        if element:
+                            if element.name == 'meta':
+                                description = element.get('content', '')
+                            else:
+                                description = element.get_text(strip=True)
+                            if description:
+                                break
+                    
+                    # Try to get thumbnail
+                    thumbnails = []
+                    og_image = soup.find('meta', property='og:image')
+                    if og_image:
+                        thumbnails.append(og_image.get('content', ''))
+                    
+                    if title and title != "Facebook":
+                        text = f"Title: {title}\n"
+                        if description:
+                            text += f"Description: {description}\n"
+                        
+                        return {
+                            "title": title,
+                            "text": text,
+                            "description": description,
+                            "meta_description": description,
+                            "uploader": "",
+                            "uploader_url": "",
+                            "creator": "",
+                            "images": thumbnails,
+                            "url": url,
+                            "platform": platform,
+                            "duration": None,
+                            "view_count": None,
+                            "like_count": None,
+                            "raw_metadata": {}
+                        }
+            except Exception as fb_error:
+                logger.warning(f"Facebook mobile extraction failed: {str(fb_error)}")
+        
+        # General approach for other platforms or as fallback
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -570,4 +698,151 @@ def extract_platform_name(domain: str) -> str:
     elif "tumblr.com" in domain:
         return "Tumblr"
     else:
-        return "Social Media" 
+        return "Social Media"
+
+def extract_facebook_oembed(url: str) -> Dict[str, Any]:
+    """
+    Extract content from a Facebook URL using oEmbed API.
+    
+    Args:
+        url: Facebook URL to scrape
+        
+    Returns:
+        Dictionary with extracted content or None if failed
+    """
+    try:
+        logger.info(f"Trying Facebook oEmbed API for: {url}")
+        
+        # Facebook oEmbed endpoint
+        oembed_url = f"https://www.facebook.com/plugins/post/oembed.json/?url={url}"
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json",
+        }
+        
+        try:
+            response = requests.get(oembed_url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                oembed_data = response.json()
+                
+                # Extract available information
+                title = oembed_data.get('title', 'Facebook Post')
+                author = oembed_data.get('author_name', '')
+                author_url = oembed_data.get('author_url', '')
+                html_content = oembed_data.get('html', '')
+                
+                # Try to extract more info from the HTML if available
+                description = ""
+                if html_content:
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup(html_content, 'html.parser')
+                    # Look for text content in the embedded HTML
+                    text_elements = soup.find_all(text=True)
+                    description = ' '.join([t.strip() for t in text_elements if t.strip()])
+                
+                # Create response
+                text = f"Title: {title}\n"
+                if author:
+                    text += f"Author: {author}\n"
+                if description:
+                    text += f"Content: {description}\n"
+                
+                return {
+                    "title": title,
+                    "text": text,
+                    "description": description,
+                    "meta_description": description,
+                    "uploader": author,
+                    "uploader_url": author_url,
+                    "creator": author,
+                    "images": [],  # oEmbed doesn't typically include images for Facebook
+                    "url": url,
+                    "platform": "Facebook",
+                    "duration": None,
+                    "view_count": None,
+                    "like_count": None,
+                    "raw_metadata": {
+                        "oembed_data": oembed_data
+                    }
+                }
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Facebook oEmbed API request failed: {str(e)}")
+        except json.JSONDecodeError as e:
+            logger.warning(f"Facebook oEmbed API returned invalid JSON: {str(e)}")
+        except Exception as e:
+            logger.warning(f"Error processing Facebook oEmbed response: {str(e)}")
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"Error in Facebook oEmbed extraction: {str(e)}")
+        return None
+
+def extract_facebook_info_from_url(url: str) -> Dict[str, Any]:
+    """
+    Extract basic information from Facebook URL structure when network methods fail.
+    
+    Args:
+        url: Facebook URL
+        
+    Returns:
+        Dictionary with basic extracted info or None
+    """
+    try:
+        logger.info(f"Trying URL-based Facebook info extraction for: {url}")
+        
+        # Parse different Facebook URL patterns
+        if "/share/r/" in url:
+            # Share URL format
+            title = "Facebook Shared Post"
+            description = "A post shared on Facebook"
+        elif "/posts/" in url:
+            # Direct post URL
+            title = "Facebook Post"
+            description = "A Facebook post"
+        elif "/watch/" in url or "/video/" in url:
+            # Video URL
+            title = "Facebook Video"
+            description = "A video shared on Facebook"
+        elif "/events/" in url:
+            # Event URL
+            title = "Facebook Event"
+            description = "A Facebook event"
+        elif "/photo/" in url or "/photos/" in url:
+            # Photo URL
+            title = "Facebook Photo"
+            description = "A photo shared on Facebook"
+        else:
+            # Generic Facebook content
+            title = "Facebook Content"
+            description = "Content shared on Facebook"
+        
+        # Create basic response
+        text = f"Title: {title}\n"
+        text += f"Description: {description}\n"
+        text += f"Note: Extracted from URL structure due to Facebook's anti-scraping measures\n"
+        
+        return {
+            "title": title,
+            "text": text,
+            "description": description,
+            "meta_description": description,
+            "uploader": "",
+            "uploader_url": "",
+            "creator": "",
+            "images": [],
+            "url": url,
+            "platform": "Facebook",
+            "duration": None,
+            "view_count": None,
+            "like_count": None,
+            "raw_metadata": {
+                "extraction_method": "url_pattern_analysis",
+                "note": "Limited data due to Facebook's privacy and anti-scraping measures"
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in Facebook URL analysis: {str(e)}")
+        return None 
