@@ -18,7 +18,28 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "7918946951:AAGZRHNAn-bhzMYQ_QetQelM_9B5AoHxNPg")
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8001")
+
+# Dynamic backend URL detection for different environments
+def get_backend_url():
+    """Get the appropriate backend URL based on the environment."""
+    # Check if we're running on Railway
+    if os.getenv("RAILWAY_ENVIRONMENT"):
+        # On Railway, use localhost since both services run in the same container
+        return "http://localhost:" + os.getenv("PORT", "8001")
+    
+    # Check if BACKEND_URL is explicitly set (for other cloud providers or custom setups)
+    if os.getenv("BACKEND_URL"):
+        return os.getenv("BACKEND_URL")
+    
+    # Check if we're running in Docker (docker-compose)
+    if os.getenv("DATABASE_URL") and "postgres" in os.getenv("DATABASE_URL", ""):
+        return "http://memora:8001"  # Docker service name
+    
+    # Default to localhost for local development
+    return "http://localhost:8001"
+
+BACKEND_URL = get_backend_url()
+logger.info(f"Using backend URL: {BACKEND_URL}")
 
 if not TELEGRAM_BOT_TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required")
@@ -325,60 +346,46 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         if url and is_valid_url(url):
             await message.reply_text("🔗 Processing URL...")
-        
-        try:
-            response = requests.post(
-                f"{BACKEND_URL}/extract",
-                json={
-                    "user_id": user_id,
-                    "url": url,
-                    "user_context": user_context if user_context else None
-                },
-                timeout=30
-            )
             
-            if response.status_code == 200:
-                result = response.json()
-                reply_text = f"✅ **Saved URL Successfully!**\n\n"
-                reply_text += f"📌 **Title:** {result.get('title', 'N/A')}\n"
-                reply_text += f"📝 **Description:** {result.get('description', 'N/A')}\n"
-                reply_text += f"🏷️ **Tags:** {', '.join(result.get('tags', []))}\n"
-                if user_context:
-                    reply_text += f"💭 **Your Context:** {user_context}"
+            try:
+                response = requests.post(
+                    f"{BACKEND_URL}/extract",
+                    json={
+                        "user_id": user_id,
+                        "url": url,
+                        "user_context": user_context if user_context else None
+                    },
+                    timeout=30
+                )
                 
-                await message.reply_text(reply_text, parse_mode='Markdown')
-            else:
-                await message.reply_text(f"❌ Error processing URL: {response.text}")
-                
-        except requests.exceptions.Timeout:
-            await message.reply_text("⏰ Request timed out. The URL might be taking too long to process.")
-        except Exception as e:
-            logger.error(f"Error processing URL for user {user_id}: {str(e)}")
-            await message.reply_text("❌ Error processing URL. Please try again.")
-    else:
+                if response.status_code == 200:
+                    result = response.json()
+                    reply_text = f"✅ **Saved URL Successfully!**\n\n"
+                    reply_text += f"📌 **Title:** {result.get('title', 'N/A')}\n"
+                    reply_text += f"📝 **Description:** {result.get('description', 'N/A')}\n"
+                    reply_text += f"🏷️ **Tags:** {', '.join(result.get('tags', []))}\n"
+                    if user_context:
+                        reply_text += f"💭 **Your Context:** {user_context}"
+                    
+                    await message.reply_text(reply_text, parse_mode='Markdown')
+                else:
+                    await message.reply_text(f"❌ Error processing URL: {response.text}")
+                    
+            except requests.exceptions.Timeout:
+                await message.reply_text("⏰ Request timed out. The URL might be taking too long to process.")
+            except Exception as e:
+                logger.error(f"Error processing URL for user {user_id}: {str(e)}")
+                await message.reply_text("❌ Error processing URL. Please try again.")
+        else:
             await message.reply_text("❌ Invalid URL format. Please send a valid URL.")
     
     elif intent == 'search':
         # Handle search query
-        await message.reply_text(f"🔍 Searching for: *{escape_markdown(text)}*", parse_mode='Markdown')
         await perform_search(user_id, text, message)
     
-    elif intent == 'greeting':
-        # Handle casual/greeting messages
-            casual_responses = [
-            "👋 Hi there! Send me some content you'd like me to save, or ask me to search for something you've saved before.",
-            "🙂 Hello! I can help you save content or search through your saved items. Try asking me to 'find posts about...' or share something to save.",
-            "👋 Hey! Share a URL, text note, image, or document to save it, or ask me to search your saved content.",
-            "🤖 Hi! I'm ready to help you save content or search through what you've already saved. What can I do for you?",
-            ]
-            
-            import random
-            response = random.choice(casual_responses)
-            await message.reply_text(response)
-        
     elif intent == 'save':
-        # Handle content to save
-        await message.reply_text("📝 Saving your content...")
+        # Handle text content to save
+        await message.reply_text("💾 Saving your content...")
         
         try:
             response = requests.post(
@@ -386,35 +393,40 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 json={
                     "user_id": user_id,
                     "text_content": text,
-                    "user_context": None  # For plain text, the content is the context
+                    "user_context": None
                 },
                 timeout=15
             )
             
             if response.status_code == 200:
                 result = response.json()
-                reply_text = f"✅ **Saved Text Successfully!**\n\n"
+                reply_text = f"✅ **Content Saved Successfully!**\n\n"
                 reply_text += f"📌 **Title:** {result.get('title', 'N/A')}\n"
                 reply_text += f"📝 **Description:** {result.get('description', 'N/A')}\n"
                 reply_text += f"🏷️ **Tags:** {', '.join(result.get('tags', []))}"
                 
                 await message.reply_text(reply_text, parse_mode='Markdown')
             else:
-                await message.reply_text(f"❌ Error saving text: {response.text}")
+                await message.reply_text(f"❌ Error saving content: {response.text}")
                 
+        except requests.exceptions.Timeout:
+            await message.reply_text("⏰ Request timed out while saving content.")
         except Exception as e:
             logger.error(f"Error saving text for user {user_id}: {str(e)}")
-            await message.reply_text("❌ Error saving text. Please try again.")
+            await message.reply_text("❌ Error saving content. Please try again.")
     
-    else:
-        # Fallback for unclear intent - ask for clarification
-        await message.reply_text(
-            "🤔 I'm not sure what you'd like me to do. You can:\n\n"
-            "💾 **Save content:** Share a URL, send me text to remember, or upload files\n"
-            "🔍 **Search:** Ask me to 'find posts about...' or 'show me articles on...'\n"
-            "💬 **Get help:** Type /start to see all available commands\n\n"
-            "What would you like to do?"
-        )
+    else:  # intent == 'greeting'
+        # Handle casual messages - provide helpful response without saving
+        casual_responses = [
+            "👋 Hi there! Send me content you'd like to save, or use /search to find something!",
+            "🤖 Hello! I'm here to help you save and organize content. Try sharing a URL or some text!",
+            "✨ Hey! I can help you save articles, videos, notes, and more. What would you like to do?",
+            "🧠 Hi! I'm your memory assistant. Share something interesting or search your saved content!"
+        ]
+        
+        import random
+        response = random.choice(casual_responses)
+        await message.reply_text(response)
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: str) -> None:
     """Handle document uploads."""

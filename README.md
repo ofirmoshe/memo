@@ -10,14 +10,66 @@ Memora is an AI-powered personal memory assistant that helps users save, organiz
 - Support for social media and general websites
 - Intelligent content type detection
 
+## Deployment Options
+
+### 🚀 Railway Deployment (Recommended for Production)
+
+Deploy to Railway for a stable, scalable cloud deployment:
+
+1. **Quick Deploy**: Follow the detailed guide in [RAILWAY_DEPLOYMENT.md](RAILWAY_DEPLOYMENT.md)
+2. **One-Click Setup**: Import from GitHub → Add PostgreSQL → Set environment variables
+3. **Auto-Scaling**: Automatically scales with your user base
+4. **Cost-Effective**: Free tier covers testing, pay-as-you-grow
+
+**Required Environment Variables for Railway:**
+- `OPENAI_API_KEY` - Your OpenAI API key
+- `TELEGRAM_BOT_TOKEN` - Your Telegram bot token
+
+Railway automatically provides `DATABASE_URL` and `PORT`.
+
+### 🐳 Local Docker Development
+
+For local development and testing:
+
+```bash
+# Clone and setup
+git clone <repository-url>
+cd memo
+cp .env.example .env
+# Edit .env with your API keys
+
+# Run with Docker Compose
+docker-compose up -d
+```
+
+### 🔧 Local Python Development
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Setup environment
+cp .env.example .env
+# Edit .env with your API keys
+
+# Initialize database
+python -m app.cli db-migrate --init
+
+# Run backend
+python -m app.main
+
+# Run telegram bot (in another terminal)
+python telegram_bot.py
+```
+
 ## Getting Started
 
 ### Prerequisites
 
 - Python 3.9+
 - OpenAI API key
+- Telegram Bot Token (from @BotFather)
 - PostgreSQL (for production) or SQLite (for development)
-- Docker (optional)
 
 ### Installation
 
@@ -40,6 +92,7 @@ Memora is an AI-powered personal memory assistant that helps users save, organiz
 4. Edit `.env` file and add your OpenAI API key and database configuration:
    ```
    OPENAI_API_KEY=your_openai_api_key_here
+   TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
    
    # For local development with SQLite:
    DATABASE_URL=sqlite:///./memora.db
@@ -98,6 +151,7 @@ docker build -t memora .
 ```bash
 docker run -d -p 8001:8001 --name memora-app \
   -e OPENAI_API_KEY=your_openai_api_key_here \
+  -e TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here \
   -v $(pwd)/data:/app/data \
   memora
 ```
@@ -167,6 +221,19 @@ Search content:
 Invoke-WebRequest -Method GET -Uri "http://localhost:8001/search?user_id=user1&query=example&top_k=5" | Select-Object -ExpandProperty Content
 ```
 
+## Environment Detection
+
+The application automatically detects the deployment environment:
+
+- **Railway**: Detects `RAILWAY_ENVIRONMENT` → uses localhost communication
+- **Docker Compose**: Detects PostgreSQL in `DATABASE_URL` → uses service names  
+- **Local Development**: Falls back to localhost
+
+Test environment detection:
+```bash
+python test_environment.py
+```
+
 ## Troubleshooting
 
 - If you encounter database errors, try running the migration script:
@@ -188,59 +255,34 @@ SQLite is the default database for development. No additional configuration is r
 
 ### Using PostgreSQL (Production)
 
-For production environments, PostgreSQL is recommended:
+For production environments, PostgreSQL is recommended. Railway automatically provides a managed PostgreSQL instance.
 
-1. Install PostgreSQL on your system or use a cloud provider
-2. Create a database and user:
-   ```sql
-   CREATE DATABASE memora;
-   CREATE USER memora_user WITH PASSWORD 'your_password';
-   GRANT ALL PRIVILEGES ON DATABASE memora TO memora_user;
-   ```
-3. Update your `.env` file with the PostgreSQL connection string:
-   ```
-   DATABASE_URL=postgresql://memora_user:your_password@localhost:5432/memora
-   ```
+## Architecture
 
-### Database Migrations
-
-Memora uses Alembic for database migrations:
-
-```bash
-# Initialize migrations (first time only)
-python -m app.cli db-migrate --init
-
-# Run migrations
-python -m app.cli db-migrate
-
-# Create a new migration
-python -m app.cli create-migration "Description of changes"
+### Local Development
+```
+┌─────────────┐    ┌───────────────┐    ┌─────────────┐
+│   FastAPI   │    │ Telegram Bot  │    │ PostgreSQL  │
+│   Backend   │    │               │    │  Database   │
+│   :8001     │◄──►│               │◄──►│   :5432     │
+└─────────────┘    └───────────────┘    └─────────────┘
 ```
 
-## Cloud Deployment
-
-### Preparing for Cloud Deployment
-
-1. Set up a PostgreSQL database on your cloud provider (AWS RDS, Azure Database, Google Cloud SQL, etc.)
-
-2. Update your environment variables with the cloud database connection string:
-   ```
-   DATABASE_URL=postgresql://username:password@your-instance.region.rds.amazonaws.com:5432/memora
-   ```
-
-3. Configure connection pooling settings if needed:
-   ```
-   DB_POOL_SIZE=10
-   DB_MAX_OVERFLOW=20
-   DB_POOL_RECYCLE=1800
-   ```
-
-### Kubernetes Deployment
-
-The `k8s` directory contains Kubernetes manifests for deploying Memora to a Kubernetes cluster:
-
-1. Update the ConfigMap and Secret with your environment variables
-2. Apply the manifests:
-   ```bash
-   kubectl apply -f k8s/
-   ```
+### Railway Deployment
+```
+┌─────────────────────────────────────┐
+│           Railway Service           │
+├─────────────────────────────────────┤
+│  ┌─────────────┐ ┌───────────────┐  │
+│  │   FastAPI   │ │ Telegram Bot  │  │
+│  │   Backend   │ │               │  │
+│  │   :8080     │ │               │  │
+│  └─────────────┘ └───────────────┘  │
+└─────────────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────┐
+│        PostgreSQL Database         │
+│         (Railway Service)          │
+└─────────────────────────────────────┘
+```
