@@ -245,7 +245,7 @@ async def perform_search(user_id: str, query: str, message) -> None:
             json={
                 "user_id": user_id,
                 "query": query,
-                "top_k": 5
+                "top_k": 20
             },
             timeout=10
         )
@@ -253,8 +253,8 @@ async def perform_search(user_id: str, query: str, message) -> None:
         if response.status_code == 200:
             results = response.json()
             
-            # Filter results by similarity threshold (0.3 minimum)
-            filtered_results = [result for result in results if result.get('similarity_score', 0) >= 0.3]
+            # Filter results by similarity threshold (0.35 minimum)
+            filtered_results = [result for result in results if result.get('similarity_score', 0) >= 0.35]
             
             if not filtered_results:
                 await message.reply_text(f"🔍 No relevant results found for: {query}\n💡 Try using different keywords or be more specific.")
