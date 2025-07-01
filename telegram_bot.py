@@ -9,6 +9,7 @@ import json
 from urllib.parse import urlparse
 from app.utils.file_processor import FileProcessor
 from io import BytesIO
+from app.utils.llm import detect_intent_and_translate
 
 # Configure logging
 logging.basicConfig(
@@ -144,7 +145,7 @@ def detect_user_intent(text: str) -> str:
             return 'save'
     else:
         # Short messages - check if they're search-like single keywords
-        search_single_keywords = ['posts', 'articles', 'videos', 'images', 'content', 'decor', 'recipes', 'tutorials', 'programming', 'cooking', 'travel', 'fitness']
+        search_single_keywords = ['find', 'search', 'look for','posts', 'articles', 'videos', 'images', 'content', 'decor', 'recipes', 'tutorials', 'programming', 'cooking', 'travel', 'fitness']
         if clean_text in search_single_keywords:
             return 'search'
         else:
@@ -455,20 +456,41 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await message.reply_text("❌ Sorry, there was an error processing your message. Please try again.")
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: str) -> None:
-    """Handle text messages (URLs, search queries, or content to save)."""
     text = update.message.text
     message = update.message
-    
-    # Detect user intent
-    intent = detect_user_intent(text)
-    
-    if intent == 'url':
-        # Handle URL with context
+
+    # Handle greetings, thanks, farewells with regex and predefined answers
+    greeting_patterns = [
+        r'^(hi|hello|hey|yo|sup|hiya|howdy)[!,. ]*$',
+        r'^(good morning|good afternoon|good evening|good night)[!,. ]*$',
+        r'^(morning|afternoon|evening|night)[!,. ]*$',
+    ]
+    thanks_patterns = [
+        r'^(thanks|thank you|thx|ty|appreciate it)[!,. ]*$',
+    ]
+    farewell_patterns = [
+        r'^(bye|goodbye|see you|cya|later|take care)[!,. ]*$',
+    ]
+
+    clean_text = text.strip().lower()
+    for pattern in greeting_patterns:
+        if re.match(pattern, clean_text):
+            await message.reply_text("👋 Hi there! How can I help you today?")
+            return
+    for pattern in thanks_patterns:
+        if re.match(pattern, clean_text):
+            await message.reply_text("🙏 You're welcome! If you need anything else, just ask.")
+            return
+    for pattern in farewell_patterns:
+        if re.match(pattern, clean_text):
+            await message.reply_text("👋 Goodbye! Have a great day!")
+            return
+
+    # Detect user intent for URLs first (keep existing logic)
+    if re.search(r'https?://', text):
         url, user_context = extract_url_and_context(text)
-        
         if url and is_valid_url(url):
             await message.reply_text("🔗 Processing URL...")
-            
             try:
                 response = requests.post(
                     f"{BACKEND_URL}/extract",
@@ -479,21 +501,15 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                     },
                     timeout=30
                 )
-                
                 if response.status_code == 200:
                     result = response.json()
-                    
-                    # Use plain text formatting to avoid escape character issues
                     title = result.get('title', 'N/A')
                     description = result.get('description', 'N/A')
                     tags = result.get('tags', [])
-                    
-                    # Truncate long content
                     if len(title) > 100:
                         title = title[:97] + "..."
                     if len(description) > 300:
                         description = description[:297] + "..."
-                    
                     reply_text = "✅ Saved URL Successfully!\n\n"
                     reply_text += f"📌 Title: {title}\n"
                     reply_text += f"📝 Description: {description}\n"
@@ -501,11 +517,9 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                     if user_context:
                         context_text = user_context[:150] + "..." if len(user_context) > 150 else user_context
                         reply_text += f"💭 Your Context: {context_text}"
-                    
                     await message.reply_text(reply_text)
                 else:
                     await message.reply_text(f"❌ Error processing URL: {response.text}")
-                    
             except requests.exceptions.Timeout:
                 await message.reply_text("⏰ Request timed out. The URL might be taking too long to process.")
             except Exception as e:
@@ -513,67 +527,59 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 await message.reply_text("❌ Error processing URL. Please try again.")
         else:
             await message.reply_text("❌ Invalid URL format. Please send a valid URL.")
-    
-    elif intent == 'search':
-        # Handle search query
-        await perform_search(user_id, text, message)
-    
+        return
+
+    # Use LLM router for all other text messages
+    try:
+        llm_result = detect_intent_and_translate(text)
+        intent = llm_result.get("intent", "general")
+        english_text = llm_result.get("english_text", text)
+        answer = llm_result.get("answer", "")
+    except Exception as e:
+        logger.error(f"LLM router error: {str(e)}")
+        await message.reply_text("❌ Sorry, there was an error understanding your message. Please try again.")
+        return
+
+    if intent == 'search':
+        await perform_search(user_id, english_text, message)
     elif intent == 'save':
-        # Handle text content to save
         await message.reply_text("💾 Saving your content...")
-        
         try:
             response = requests.post(
                 f"{BACKEND_URL}/save-text",
                 json={
                     "user_id": user_id,
-                    "text_content": text,
+                    "text_content": english_text,
                     "user_context": None
                 },
                 timeout=15
             )
-            
             if response.status_code == 200:
                 result = response.json()
-                
-                # Use plain text formatting to avoid escape character issues
                 title = result.get('title', 'N/A')
                 description = result.get('description', 'N/A')
                 tags = result.get('tags', [])
-                
-                # Truncate long content
                 if len(title) > 100:
                     title = title[:97] + "..."
                 if len(description) > 300:
                     description = description[:297] + "..."
-                
                 reply_text = "✅ Content Saved Successfully!\n\n"
                 reply_text += f"📌 Title: {title}\n"
                 reply_text += f"📝 Description: {description}\n"
                 reply_text += f"🏷️ Tags: {', '.join(tags[:5]) if tags else 'None'}"
-                
                 await message.reply_text(reply_text)
             else:
                 await message.reply_text(f"❌ Error saving content: {response.text}")
-                
         except requests.exceptions.Timeout:
             await message.reply_text("⏰ Request timed out while saving content.")
         except Exception as e:
             logger.error(f"Error saving text for user {user_id}: {str(e)}")
             await message.reply_text("❌ Error saving content. Please try again.")
-    
-    else:  # intent == 'greeting'
-        # Handle casual messages - provide helpful response without saving
-        casual_responses = [
-            "👋 Hi there! Send me content you'd like to save, or use /search to find something!",
-            "🤖 Hello! I'm here to help you save and organize content. Try sharing a URL or some text!",
-            "✨ Hey! I can help you save articles, videos, notes, and more. What would you like to do?",
-            "🧠 Hi! I'm your memory assistant. Share something interesting or search your saved content!"
-        ]
-        
-        import random
-        response = random.choice(casual_responses)
-        await message.reply_text(response)
+    else:  # intent == 'general'
+        if answer:
+            await message.reply_text(answer)
+        else:
+            await message.reply_text("🤖 I'm not sure what you want to do. Please use 'find ...' to search or 'save ...' to save content.")
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: str) -> None:
     """Handle document uploads."""

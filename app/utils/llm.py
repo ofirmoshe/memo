@@ -469,4 +469,89 @@ Respond in JSON format:
     "content_type": "receipt/document/screenshot/photo/etc",
     "platform": "personal",
     "key_information": ["important detail 1", "important detail 2"]
-}}""" 
+}}"""
+
+def detect_intent_and_translate(text: str) -> dict:
+    """
+    Use LLM to detect user intent (search, save, general), translate to English, and provide a structured response.
+    Returns a dict: {"intent": ..., "english_text": ..., "answer": ...}
+    """
+    prompt = '''
+You are an AI assistant for a personal memory bot. Your job is to:
+1. Detect the user's intent: "search", "save", or "general".
+2. If the message is not in English, translate it to English.
+3. For "search", return the English query.
+4. For "save", return the English content.
+5. For "general", return a suitable English answer.
+
+Always respond in this JSON format:
+{
+  "intent": "search|save|general",
+  "english_text": "...",   // The translated or original English text
+  "answer": "..."          // Only for 'general' intent, otherwise empty string
+}
+
+Guardrails:
+- Only use the intents: "search", "save", or "general".
+- If you are not sure, use "general" and suggest the user to add "find ..." or "save ..." to clarify their intent.
+- Always output valid JSON and nothing else.
+- If unsure, default to "general" with a helpful answer.
+
+Examples:
+User: "Find articles about AI"
+Response: {"intent": "search", "english_text": "Find articles about AI", "answer": ""}
+
+User: "תזכור לקנות חלב מחר"
+Response: {"intent": "save", "english_text": "Remember to buy milk tomorrow", "answer": ""}
+
+User: "How are you?"
+Response: {"intent": "general", "english_text": "How are you?", "answer": "I'm just a bot, but I'm here to help you!"}
+
+User: "¿Dónde están mis notas sobre viajes?"
+Response: {"intent": "search", "english_text": "Where are my notes about travel?", "answer": ""}
+
+User: "home decor ideas"
+Response: {"intent": "search", "english_text": "home decor ideas", "answer": ""}
+
+User: "thailand koh samui recommendations"
+Response: {"intent": "search", "english_text": "thailand koh samui recommendations", "answer": ""}
+
+User: "the bank code"
+Response: {"intent": "search", "english_text": "the bank code", "answer": ""}
+
+User: "bank code 8483"
+Response: {"intent": "save", "english_text": "bank code 8483", "answer": ""}
+
+User: "open hours of Vibe gym"
+Response: {"intent": "search", "english_text": "open hours of Vibe gym", "answer": ""}
+
+User: "humous recipe with tofu and red beans"
+Response: {"intent": "search", "english_text": "humous recipe with tofu and red beans", "answer": ""}
+
+User: "8483"
+Response: {"intent": "general", "english_text": "8483", "answer": "I'm not sure if you want to save or search for this. Please use 'find ...' or 'save ...' to clarify your intent."}
+
+User: "my favorite quote: The only limit is the one you set yourself."
+Response: {"intent": "save", "english_text": "my favorite quote: The only limit is the one you set yourself.", "answer": ""}
+
+User: "test"
+Response: {"intent": "general", "english_text": "test", "answer": "Hi! Please send me something to save or search."}
+'''
+    try:
+        response = get_llm_response(prompt + f"\nUser: {text}\nResponse:")
+        # Try to extract JSON from the response
+        json_match = re.search(r'\{.*\}', response, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(0)
+        else:
+            json_str = response
+        result = json.loads(json_str)
+        # Validate required fields
+        for field in ["intent", "english_text", "answer"]:
+            if field not in result:
+                result[field] = ""
+        return result
+    except Exception as e:
+        logger.error(f"Error in detect_intent_and_translate: {str(e)} | Raw response: {response}")
+        # Fallback: treat as general
+        return {"intent": "general", "english_text": text, "answer": "Sorry, I couldn't understand your request. Please use 'find ...' or 'save ...' to clarify your intent."} 
