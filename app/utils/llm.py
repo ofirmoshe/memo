@@ -519,6 +519,9 @@ Response: {"intent": "search", "english_text": "thailand koh samui recommendatio
 User: "the bank code"
 Response: {"intent": "search", "english_text": "the bank code", "answer": ""}
 
+User: "הקוד הסודי שלי"
+Response: {"intent": "search", "english_text": "my secret code", "answer": ""}
+
 User: "bank code 8483"
 Response: {"intent": "save", "english_text": "bank code 8483", "answer": ""}
 

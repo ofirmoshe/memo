@@ -2,8 +2,8 @@ import os
 import logging
 import re
 import asyncio
-from telegram import Update, File
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, File, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 import requests
 import json
 from urllib.parse import urlparse
@@ -261,7 +261,6 @@ async def perform_search(user_id: str, query: str, message) -> None:
                 return
             
             reply_text = f"🔍 Search Results for: {query}\n\n"
-            
             for i, result in enumerate(filtered_results, 1):
                 title = result.get('title', 'Untitled')
                 description = result.get('description', '')
@@ -270,66 +269,36 @@ async def perform_search(user_id: str, query: str, message) -> None:
                 url = result.get('url', '')
                 media_type = result.get('media_type', 'url')
                 content_data = result.get('content_data', '')
-                
-                reply_text += f"{i}. {title}\n"
-                
-                # For text notes, show the original content instead of description
+                item_id = result.get('id')
+
+                result_text = f"{i}. {title}\n"
                 if media_type == 'text' and content_data:
-                    # Truncate long content
                     content_preview = content_data[:150] + "..." if len(content_data) > 150 else content_data
-                    reply_text += f"📝 {content_preview}\n"
+                    result_text += f"📝 {content_preview}\n"
                 elif description:
-                    # Truncate long descriptions
                     desc_preview = description[:150] + "..." if len(description) > 150 else description
-                    reply_text += f"📝 {desc_preview}\n"
-                
+                    result_text += f"📝 {desc_preview}\n"
                 if tags:
-                    reply_text += f"🏷️ {', '.join(tags[:3])}\n"
-                
-                # Add media type indicator and URL
+                    result_text += f"🏷️ {', '.join(tags[:3])}\n"
                 if media_type == 'url' and url:
-                    reply_text += f"🔗 {url}\n"
+                    result_text += f"🔗 {url}\n"
                 elif media_type == 'text':
-                    reply_text += "📝 Text Note\n"
+                    result_text += "📝 Text Note\n"
                 elif media_type == 'document':
-                    reply_text += "📄 Document\n"
+                    result_text += "📄 Document\n"
                 elif media_type == 'image':
-                    reply_text += "🖼️ Image\n"
-                
-                reply_text += f"📊 Relevance: {similarity:.2f}\n\n"
-            
-            # Send the text results first
-            if len(reply_text) > 4000:
-                # Split into chunks
-                chunks = []
-                current_chunk = f"🔍 Search Results for: {query}\n\n"
-                
-                for i, result in enumerate(filtered_results, 1):
-                    result_text = f"{i}. {result.get('title', 'Untitled')}\n"
-                    if result.get('description'):
-                        desc = result['description'][:100] + "..." if len(result['description']) > 100 else result['description']
-                        result_text += f"📝 {desc}\n"
-                    if result.get('tags'):
-                        result_text += f"🏷️ {', '.join(result['tags'][:3])}\n"
-                    if result.get('url'):
-                        result_text += f"🔗 {result['url']}\n"
-                    result_text += f"📊 Relevance: {result.get('similarity_score', 0):.2f}\n\n"
-                    
-                    if len(current_chunk + result_text) > 3800:
-                        chunks.append(current_chunk)
-                        current_chunk = result_text
-                    else:
-                        current_chunk += result_text
-                
-                if current_chunk:
-                    chunks.append(current_chunk)
-                
-                # Send chunks
-                for chunk in chunks:
-                    await message.reply_text(chunk)
-            else:
-                await message.reply_text(reply_text)
-            
+                    result_text += "🖼️ Image\n"
+                result_text += f"📊 Relevance: {similarity:.2f}\n"
+
+                # Inline delete button
+                if item_id:
+                    keyboard = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🗑️ Delete", callback_data=f"delete:{item_id}")]
+                    ])
+                    await message.reply_text(result_text, reply_markup=keyboard)
+                else:
+                    await message.reply_text(result_text)
+
             # Now send files for results that have them (images and documents)
             files_sent = 0
             for result in filtered_results:
@@ -338,17 +307,13 @@ async def perform_search(user_id: str, query: str, message) -> None:
                         success = await send_file_to_user(message, result, user_id)
                         if success:
                             files_sent += 1
-                        # Small delay between file sends
                         await asyncio.sleep(0.5)
                     else:
                         break
-            
             if files_sent > 0:
                 await message.reply_text(f"📎 Sent {files_sent} file(s) from your search results!")
-                
         else:
             await message.reply_text(f"❌ Search failed: {response.text}")
-            
     except requests.exceptions.Timeout:
         await message.reply_text("⏰ Search timed out. Please try again.")
     except Exception as e:
@@ -559,6 +524,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 title = result.get('title', 'N/A')
                 description = result.get('description', 'N/A')
                 tags = result.get('tags', [])
+                item_id = result.get('id')
                 if len(title) > 100:
                     title = title[:97] + "..."
                 if len(description) > 300:
@@ -567,7 +533,14 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 reply_text += f"📌 Title: {title}\n"
                 reply_text += f"📝 Description: {description}\n"
                 reply_text += f"🏷️ Tags: {', '.join(tags[:5]) if tags else 'None'}"
-                await message.reply_text(reply_text)
+                # Inline delete button for saved item
+                if item_id:
+                    keyboard = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🗑️ Delete", callback_data=f"delete:{item_id}")]
+                    ])
+                    await message.reply_text(reply_text, reply_markup=keyboard)
+                else:
+                    await message.reply_text(reply_text)
             else:
                 await message.reply_text(f"❌ Error saving content: {response.text}")
         except requests.exceptions.Timeout:
@@ -791,6 +764,44 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f"Error getting stats for user {user_id}: {str(e)}")
         await update.message.reply_text("❌ Error retrieving statistics.")
 
+async def handle_delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle inline delete button callback."""
+    query = update.callback_query
+    await query.answer()
+    user_id = str(query.from_user.id)
+    data = query.data
+    if data.startswith("delete:"):
+        item_id = data.split(":", 1)[1]
+        try:
+            response = requests.post(
+                f"{BACKEND_URL}/delete-item",
+                json={"user_id": user_id, "item_id": item_id},
+                timeout=10
+            )
+            if response.status_code == 200:
+                await query.edit_message_text("🗑️ Item deleted!")
+            else:
+                await query.edit_message_text(f"❌ Failed to delete item: {response.text}")
+        except Exception as e:
+            await query.edit_message_text(f"❌ Error deleting item: {str(e)}")
+
+async def delete_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Delete all items for the user."""
+    user_id = str(update.effective_user.id)
+    try:
+        response = requests.post(
+            f"{BACKEND_URL}/delete-all-items",
+            json={"user_id": user_id},
+            timeout=20
+        )
+        if response.status_code == 200:
+            result = response.json()
+            await update.message.reply_text(f"🗑️ {result.get('message', 'All items deleted!')}")
+        else:
+            await update.message.reply_text(f"❌ Failed to delete all items: {response.text}")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error deleting all items: {str(e)}")
+
 def main() -> None:
     """Start the bot."""
     # Create the Application
@@ -800,6 +811,8 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("search", search))
     application.add_handler(CommandHandler("stats", stats))
+    application.add_handler(CommandHandler("deleteall", delete_all))
+    application.add_handler(CallbackQueryHandler(handle_delete_callback))
     
     # Handle all types of messages
     application.add_handler(MessageHandler(

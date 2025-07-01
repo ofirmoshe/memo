@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Query, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Depends, Query, UploadFile, File, Form, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from typing import List, Optional
@@ -654,6 +654,40 @@ async def debug_file(item_id: str, user_id: str = Query(...), db: Session = Depe
         
     except Exception as e:
         return {"error": str(e)}
+
+@app.post("/delete-item")
+async def delete_single_item(
+    user_id: str = Body(...),
+    item_id: str = Body(...),
+    db: Session = Depends(get_db)
+):
+    """Delete a single item for a user by item_id."""
+    try:
+        item = db.query(Item).filter(Item.id == item_id, Item.user_id == user_id).first()
+        if not item:
+            raise HTTPException(status_code=404, detail="Item not found")
+        db.delete(item)
+        db.commit()
+        return {"success": True, "message": "Item deleted"}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting item: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error deleting item: {str(e)}")
+
+@app.post("/delete-all-items")
+async def delete_all_items(
+    user_id: str = Body(...),
+    db: Session = Depends(get_db)
+):
+    """Delete all items for a user."""
+    try:
+        num_deleted = db.query(Item).filter(Item.user_id == user_id).delete()
+        db.commit()
+        return {"success": True, "message": f"Deleted {num_deleted} items"}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting all items: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error deleting all items: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
