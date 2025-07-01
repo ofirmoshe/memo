@@ -559,63 +559,45 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE, us
     document = update.message.document
     message = update.message
     caption = message.caption or ""
-    
-    # Check file size (50MB limit)
     MAX_FILE_SIZE = 50 * 1024 * 1024
     if document.file_size > MAX_FILE_SIZE:
         size_mb = document.file_size / (1024 * 1024)
         await message.reply_text(f"❌ File too large ({size_mb:.1f}MB). Maximum size is 50MB.")
         return
-    
-    # Check if file type is supported
     supported_types = {
         'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'application/msword', 'text/plain', 'text/csv'
     }
-    
     if document.mime_type not in supported_types:
         await message.reply_text(f"❌ Unsupported file type: {document.mime_type}")
         return
-    
     await message.reply_text("📄 Processing document...")
-    
     try:
-        # Download file
         file = await context.bot.get_file(document.file_id)
         file_data = await file.download_as_bytearray()
-        
-        # Send to backend for processing
         files = {'file': (document.file_name, bytes(file_data), document.mime_type)}
         data = {
             'user_id': user_id,
             'user_context': caption if caption else None
         }
-        
-        # Use requests to upload file
         response = requests.post(
             f"{BACKEND_URL}/upload-file",
             files=files,
             data=data,
             timeout=60
         )
-        
         if response.status_code == 200:
             result = response.json()
-            
-            # Use plain text formatting to avoid escape character issues
             filename = document.file_name
             title = result.get('title', 'N/A')
             description = result.get('description', 'N/A')
             tags = result.get('tags', [])
-            
-            # Truncate long content
             if len(filename) > 50:
                 filename = filename[:47] + "..."
             if len(title) > 100:
                 title = title[:97] + "..."
             if len(description) > 300:
                 description = description[:297] + "..."
-            
             reply_text = "✅ Document Saved Successfully!\n\n"
             reply_text += f"📁 File: {filename}\n"
             reply_text += f"📌 Title: {title}\n"
@@ -624,11 +606,9 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE, us
             if caption:
                 context_text = caption[:150] + "..." if len(caption) > 150 else caption
                 reply_text += f"💭 Your Context: {context_text}"
-            
             await message.reply_text(reply_text)
         else:
             await message.reply_text(f"❌ Error processing document: {response.text}")
-            
     except Exception as e:
         logger.error(f"Error processing document for user {user_id}: {str(e)}")
         await message.reply_text("❌ Error processing document. Please try again.")
@@ -690,12 +670,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE, user_
             reply_text += f"📌 Title: {title}\n"
             reply_text += f"📝 Description: {description}\n"
             reply_text += f"🏷️ Tags: {', '.join(tags[:5]) if tags else 'None'}\n"
-            
-            # Show extracted text preview if available
-            extracted_text = result.get('extracted_text_preview', '')
-            if extracted_text:
-                extracted_preview = extracted_text[:200] + "..." if len(extracted_text) > 200 else extracted_text
-                reply_text += f"📋 Extracted Text: {extracted_preview}\n"
             
             if caption:
                 context_text = caption[:150] + "..." if len(caption) > 150 else caption
