@@ -99,7 +99,7 @@ def apply_migration(engine: Engine) -> bool:
                     is_primary BOOLEAN NOT NULL DEFAULT false,
                     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     last_used_at TIMESTAMP,
-                    metadata JSON
+                    provider_metadata JSON
                 );
             """))
             

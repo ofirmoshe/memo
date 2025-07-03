@@ -71,8 +71,8 @@ class UserAuthProvider(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     last_used_at = Column(DateTime, nullable=True)
     
-    # Provider-specific metadata as JSON
-    metadata = Column(JSON, nullable=True)
+    # Provider-specific metadata as JSON (renamed from 'metadata' to avoid SQLAlchemy conflict)
+    provider_metadata = Column(JSON, nullable=True)
     
     # Relationship to base User model
     user = relationship("User", back_populates="auth_providers")

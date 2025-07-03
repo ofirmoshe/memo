@@ -11,6 +11,13 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from collections import Counter
 
+# Configure logging first
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+
 from app.models.schemas import ExtractRequest, SearchRequest, MemoraItem, SaveTextRequest, SaveFileRequest
 from app.db.database import get_db, init_db, get_or_create_user, Item
 from app.utils.extractor import extract_and_save_content, extract_content_from_url
@@ -26,13 +33,6 @@ try:
 except ImportError:
     logger.warning("User profile system not available - continuing without it")
     USER_PROFILES_AVAILABLE = False
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
 app = FastAPI(
