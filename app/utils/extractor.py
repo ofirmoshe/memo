@@ -134,8 +134,27 @@ def extract_content(url: str) -> Dict[str, Any]:
         
         # Check if social media scraping was successful
         if not content.get("success", False):
-            logger.warning(f"Social media scraping failed: {content.get('error', 'Unknown error')}")
-            # Try fallback to general website scraping
+            error_msg = content.get('error', 'Unknown error')
+            logger.warning(f"Social media scraping failed: {error_msg}")
+            
+            # Special handling for TikTok photo posts - don't fall back to web scraping
+            if "photo posts are not supported" in error_msg.lower():
+                logger.info("TikTok photo post detected - returning error instead of fallback")
+                # Return the error response directly without fallback
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "title": content.get('title', 'Content Not Supported'),
+                    "text": content.get('text', ''),
+                    "meta_description": content.get('meta_description', ''),
+                    "images": content.get('images', []),
+                    "url": url,
+                    "platform": content.get('platform', subtype),
+                    "content_type": content_type.value,
+                    "raw_metadata": content.get('raw_metadata', {})
+                }
+            
+            # Try fallback to general website scraping for other errors
             logger.info("Attempting fallback to general website scraping")
             content = scrape_website(url)
             content["content_type"] = content_type.value
@@ -377,8 +396,27 @@ def extract_content_from_url(url: str) -> Dict[str, Any]:
             
             # Check if social media scraping was successful
             if not content.get("success", False):
-                logger.warning(f"Social media scraping failed: {content.get('error', 'Unknown error')}")
-                # Try fallback to general website scraping
+                error_msg = content.get('error', 'Unknown error')
+                logger.warning(f"Social media scraping failed: {error_msg}")
+                
+                # Special handling for TikTok photo posts - don't fall back to web scraping
+                if "photo posts are not supported" in error_msg.lower():
+                    logger.info("TikTok photo post detected - returning error instead of fallback")
+                    # Return the error response directly without fallback
+                    return {
+                        "success": False,
+                        "error": error_msg,
+                        "title": content.get('title', 'Content Not Supported'),
+                        "text": content.get('text', ''),
+                        "meta_description": content.get('meta_description', ''),
+                        "images": content.get('images', []),
+                        "url": url,
+                        "platform": content.get('platform', subtype),
+                        "content_type": content_type.value,
+                        "raw_metadata": content.get('raw_metadata', {})
+                    }
+                
+                # Try fallback to general website scraping for other errors
                 logger.info("Attempting fallback to general website scraping")
                 content = scrape_website(url)
                 content["content_type"] = content_type.value

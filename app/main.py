@@ -67,6 +67,12 @@ async def extract_and_save(request: ExtractRequest, db: Session = Depends(get_db
         if not content:
             raise HTTPException(status_code=400, detail="Failed to extract content from URL")
         
+        # Check if extraction failed (e.g., TikTok photo posts)
+        if content.get("success") == False:
+            error_msg = content.get("error", "Content extraction failed")
+            logger.warning(f"Content extraction failed for {request.url}: {error_msg}")
+            raise HTTPException(status_code=400, detail=error_msg)
+        
         # Create enhanced prompt with user context
         prompt = get_content_analysis_prompt(
             content=content.get("text", ""),
