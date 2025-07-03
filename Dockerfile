@@ -32,5 +32,5 @@ ENV PORT=8001
 ENV PYTHONPATH=/app
 ENV USER_PROFILES_ENABLED=true
 
-# Default command (can be overridden in docker-compose)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"] 
+# Default command - use Railway startup script for both web and bot
+CMD ["python", "start_railway.py"] 

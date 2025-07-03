@@ -41,19 +41,28 @@ def start_telegram_bot():
     logger.info("🤖 Starting Telegram bot...")
     try:
         # Wait a bit for the backend to start
+        logger.info("⏳ Waiting 10 seconds for backend to fully initialize...")
         time.sleep(10)
         
         # Import and run the enhanced telegram bot with user profiles
         try:
+            logger.info("🔍 Attempting to import enhanced Telegram bot...")
             from telegram_bot_enhanced import main as telegram_main
-            logger.info("Using enhanced Telegram bot with user profiles")
-        except ImportError:
-            logger.warning("Enhanced bot not available, falling back to basic bot")
-            from telegram_bot import main as telegram_main
+            logger.info("✅ Using enhanced Telegram bot with user profiles")
+        except ImportError as e:
+            logger.warning(f"⚠️ Enhanced bot not available ({e}), falling back to basic bot")
+            try:
+                from telegram_bot import main as telegram_main
+                logger.info("✅ Using basic Telegram bot")
+            except ImportError as e2:
+                logger.error(f"❌ Could not import any Telegram bot: {e2}")
+                raise
         
+        logger.info("🚀 Starting Telegram bot main function...")
         telegram_main()
     except Exception as e:
         logger.error(f"❌ Failed to start Telegram bot: {e}")
+        logger.exception("Full error traceback:")
         sys.exit(1)
 
 def signal_handler(signum, frame):
@@ -70,16 +79,25 @@ def main():
     signal.signal(signal.SIGTERM, signal_handler)
     
     # Check required environment variables
-    required_vars = ["OPENAI_API_KEY", "TELEGRAM_BOT_TOKEN"]
-    missing_vars = [var for var in required_vars if not os.getenv(var)]
+    telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    openai_key = os.getenv("OPENAI_API_KEY")
+    
+    logger.info(f"🔍 Environment check:")
+    logger.info(f"  - TELEGRAM_BOT_TOKEN: {'✅ Set' if telegram_token else '❌ Missing'}")
+    logger.info(f"  - OPENAI_API_KEY: {'✅ Set' if openai_key else '❌ Missing'}")
+    logger.info(f"  - DATABASE_URL: {'✅ Set' if os.getenv('DATABASE_URL') else '⚠️ Not set (will use SQLite)'}")
+    logger.info(f"  - PORT: {os.getenv('PORT', '8001')}")
+    
+    missing_vars = []
+    if not telegram_token:
+        missing_vars.append("TELEGRAM_BOT_TOKEN")
+    if not openai_key:
+        missing_vars.append("OPENAI_API_KEY")
     
     if missing_vars:
         logger.error(f"❌ Missing required environment variables: {missing_vars}")
+        logger.error("Please set these variables in your Railway dashboard")
         sys.exit(1)
-    
-    # DATABASE_URL is optional - if not provided, SQLite will be used
-    if not os.getenv("DATABASE_URL"):
-        logger.info("⚠️ DATABASE_URL not set, using SQLite database")
     
     logger.info("✅ All required environment variables are set")
     
