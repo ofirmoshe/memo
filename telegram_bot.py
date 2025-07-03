@@ -387,17 +387,17 @@ def is_valid_url(url: str) -> bool:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /start is issued."""
     welcome_message = """
-🧠 **Welcome to Memora - Your AI-Powered Memory Assistant!**
+🧠 Welcome to Memora - Your AI-Powered Memory Assistant!
 
-I can help you **save** and **search** different types of content:
+I can help you save and search different types of content:
 
-## **💾 SAVING CONTENT**
-📝 **Text Notes**: Send me meaningful text and I'll save it
-🔗 **URLs**: Send links with optional context: "https://example.com this is for my project"
-📸 **Images**: Upload photos, receipts, documents - I'll analyze them with AI vision
-📄 **Documents**: Send PDF, Word docs, or text files for processing
+💾 SAVING CONTENT
+📝 Text Notes: Send me meaningful text and I'll save it
+🔗 URLs: Send links with optional context: "https://example.com this is for my project"
+📸 Images: Upload photos, receipts, documents - I'll analyze them with AI vision
+📄 Documents: Send PDF, Word docs, or text files for processing
 
-## **🔍 SEARCHING CONTENT**
+🔍 SEARCHING CONTENT
 Just ask me naturally! I can understand search requests like:
 • "Find posts about home decor"
 • "Show me articles on Python programming"
@@ -405,23 +405,23 @@ Just ask me naturally! I can understand search requests like:
 • "Look for content related to AI"
 • "What did I save about travel?"
 
-## **📋 COMMANDS**
-• `/search [query]` - Explicit search command
-• `/stats` - View your saved content statistics
+📋 COMMANDS
+• /search [query] - Explicit search command
+• /stats - View your saved content statistics
 
-## **✨ SMART FEATURES**
-• **Intelligent Intent Detection**: I automatically understand if you want to save or search
-• **AI Vision**: Advanced image analysis without blurry OCR
-• **Context-Aware**: Add descriptions to your content for better organization
-• **Natural Language**: Talk to me normally - no complex commands needed
+✨ SMART FEATURES
+• Intelligent Intent Detection: I automatically understand if you want to save or search
+• AI Vision: Advanced image analysis without blurry OCR
+• Context-Aware: Add descriptions to your content for better organization
+• Natural Language: Talk to me normally - no complex commands needed
 
-## **💡 EXAMPLES**
-**Saving:**
+💡 EXAMPLES
+Saving:
 • "Remember to buy groceries tomorrow"
 • "https://github.com/example/repo useful Python library"
 • [Upload a receipt photo]
 
-**Searching:**
+Searching:
 • "home decor posts"
 • "find my Python tutorials"
 • "show me cooking videos"
@@ -429,7 +429,7 @@ Just ask me naturally! I can understand search requests like:
 Just start typing - I'm smart enough to know what you want! 🚀
     """
     
-    await update.message.reply_text(welcome_message, parse_mode='Markdown')
+    await update.message.reply_text(welcome_message)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle different types of messages (text, URLs, files)."""
@@ -779,19 +779,23 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if response.status_code == 200:
             stats_data = response.json()
             
-            reply_text = f"📊 **Your Memora Statistics**\n\n"
-            reply_text += f"📝 **Total Items:** {stats_data.get('total_items', 0)}\n"
-            reply_text += f"🔗 **URLs:** {stats_data.get('urls', 0)}\n"
-            reply_text += f"📝 **Text Notes:** {stats_data.get('texts', 0)}\n"
-            reply_text += f"📸 **Images:** {stats_data.get('images', 0)}\n"
-            reply_text += f"📄 **Documents:** {stats_data.get('documents', 0)}\n\n"
+            # Use plain text formatting to avoid Markdown parsing issues
+            reply_text = f"📊 Your Memora Statistics\n\n"
+            reply_text += f"📝 Total Items: {stats_data.get('total_items', 0)}\n"
+            reply_text += f"🔗 URLs: {stats_data.get('urls', 0)}\n"
+            reply_text += f"📝 Text Notes: {stats_data.get('texts', 0)}\n"
+            reply_text += f"📸 Images: {stats_data.get('images', 0)}\n"
+            reply_text += f"📄 Documents: {stats_data.get('documents', 0)}\n\n"
             
             if stats_data.get('top_tags'):
-                reply_text += f"🏷️ **Top Tags:**\n"
+                reply_text += f"🏷️ Top Tags:\n"
                 for tag, count in stats_data['top_tags']:
-                    reply_text += f"  • {tag} ({count})\n"
+                    # Escape special characters that might cause Markdown issues
+                    safe_tag = str(tag).replace('*', '').replace('_', '').replace('[', '').replace(']', '')
+                    reply_text += f"  • {safe_tag} ({count})\n"
             
-            await update.message.reply_text(reply_text, parse_mode='Markdown')
+            # Send without Markdown parsing to avoid errors
+            await update.message.reply_text(reply_text)
         else:
             await update.message.reply_text("❌ Could not retrieve statistics.")
             
