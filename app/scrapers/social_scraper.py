@@ -103,7 +103,7 @@ def scrape_social_media(url: str) -> Dict[str, Any]:
                 logger.info("Instagram URL detected - using enhanced extraction methods for better reliability")
                 
                 # Add initial delay to avoid rate limiting
-                time.sleep(random.uniform(3, 8))
+                time.sleep(random.uniform(1, 2))
                 
                 # Try enhanced Instagram extraction with better connection handling
                 result = extract_instagram_content_robust(url)
@@ -154,8 +154,41 @@ def scrape_social_media(url: str) -> Dict[str, Any]:
             else:
                 # For non-Facebook platforms, try yt-dlp with reduced attempts
                 # Add a random delay before starting to avoid rate limiting
-                initial_delay = random.uniform(3, 6)
+                initial_delay = random.uniform(1, 2)
                 time.sleep(initial_delay)
+                
+                # Special handling for TikTok photo posts - yt-dlp doesn't support them
+                if platform == "TikTok":
+                    # Check if this is a photo post by resolving the URL first
+                    try:
+                        # Follow redirects to get the actual TikTok URL
+                        response = requests.head(url, allow_redirects=True, timeout=10)
+                        final_url = response.url
+                        
+                        # If it's a photo post, return a clear error message
+                        if "/photo/" in final_url:
+                            logger.info(f"TikTok photo post detected: {final_url}")
+                            
+                            return {
+                                "success": False,
+                                "error": "TikTok photo posts are not supported yet. yt-dlp doesn't support TikTok photo posts, only videos. Please try with a TikTok video URL instead.",
+                                "title": "TikTok Photo Post Not Supported",
+                                "text": "TikTok photo posts are not currently supported for content extraction. This is a limitation of the underlying extraction tools. Please try with a TikTok video URL instead.",
+                                "meta_description": "",
+                                "uploader": "",
+                                "uploader_url": "",
+                                "images": [],
+                                "url": url,
+                                "platform": "TikTok",
+                                "raw_metadata": {
+                                    "content_type": "photo_post",
+                                    "support_status": "not_supported",
+                                    "final_url": final_url
+                                }
+                            }
+                    except Exception as resolve_error:
+                        logger.warning(f"Could not resolve TikTok URL for photo detection: {resolve_error}")
+                        # Continue with yt-dlp attempt if URL resolution fails
                 
                 # Try only one simplified yt-dlp approach to avoid socket exhaustion
                 try:
@@ -164,19 +197,40 @@ def scrape_social_media(url: str) -> Dict[str, Any]:
                         if f.endswith('.info.json'):
                             os.remove(os.path.join(temp_dir, f))
                     
-                    simple_cmd = [
-                        "yt-dlp",
-                        "--skip-download",
-                        "--write-info-json",
-                        "--no-warnings",
-                        "--ignore-errors",
-                        "--socket-timeout", "15",
-                        "--retries", "1",
-                        "-o", f"{temp_dir}/%(id)s",
-                        url
-                    ]
+                    # Platform-specific yt-dlp commands
+                    if platform == "TikTok":
+                        # Special handling for TikTok - focus on metadata only, works for both videos and photo posts
+                        simple_cmd = [
+                            "yt-dlp",
+                            "--skip-download",  # Don't download media files
+                            "--write-info-json",  # Only extract metadata
+                            "--no-warnings",
+                            "--ignore-errors",
+                            "--no-check-certificate",  # Skip SSL verification issues
+                            "--socket-timeout", "20",
+                            "--retries", "2",
+                            "--extractor-args", "tiktok:webpage_download=false",  # Skip webpage download
+                            "--add-header", "User-Agent:Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+                            "--add-header", "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                            "-o", f"{temp_dir}/%(id)s",
+                            url
+                        ]
+                        logger.info(f"Running TikTok metadata-only command")
+                    else:
+                        # General command for other platforms
+                        simple_cmd = [
+                            "yt-dlp",
+                            "--skip-download",
+                            "--write-info-json",
+                            "--no-warnings",
+                            "--ignore-errors",
+                            "--socket-timeout", "15",
+                            "--retries", "1",
+                            "-o", f"{temp_dir}/%(id)s",
+                            url
+                        ]
+                        logger.info(f"Running simplified yt-dlp command for {platform}")
                     
-                    logger.info(f"Running simplified yt-dlp command for {platform}")
                     process = subprocess.run(simple_cmd, capture_output=True, text=True, timeout=30)
                     
                     if process.returncode == 0:
@@ -185,14 +239,14 @@ def scrape_social_media(url: str) -> Dict[str, Any]:
                             with open(os.path.join(temp_dir, json_files[0]), 'r', encoding='utf-8') as f:
                                 metadata = json.load(f)
                             success = True
-                            logger.info("Successfully extracted with simplified command")
+                            logger.info(f"Successfully extracted {platform} metadata with specialized command")
                     else:
-                        logger.warning(f"Simplified yt-dlp failed: {process.stderr}")
+                        logger.warning(f"Specialized yt-dlp failed: {process.stderr}")
                         
                 except subprocess.TimeoutExpired:
-                    logger.warning("Simplified yt-dlp command timed out")
+                    logger.warning(f"{platform} yt-dlp command timed out")
                 except Exception as e:
-                    logger.warning(f"Simplified yt-dlp command failed: {str(e)}")
+                    logger.warning(f"{platform} yt-dlp command failed: {str(e)}")
                 
                 # If yt-dlp failed, try alternative methods
                 if not success:
@@ -748,7 +802,7 @@ def extract_facebook_oembed(url: str) -> Dict[str, Any]:
         for attempt in range(max_attempts):
             try:
                 if attempt > 0:
-                    delay = random.uniform(3, 8)
+                    delay = random.uniform(2, 5)
                     logger.info(f"Retrying Facebook oEmbed API (attempt {attempt + 1}/{max_attempts}) after {delay:.1f}s delay")
                     time.sleep(delay)
                 
@@ -1087,6 +1141,13 @@ def try_alternative_extraction(url: str, platform: str) -> Dict[str, Any]:
             except Exception as fb_error:
                 logger.warning(f"Facebook mobile extraction failed: {str(fb_error)}")
         
+        elif platform == "TikTok":
+            # TikTok videos should be handled by yt-dlp in the main flow
+            # Photo posts are already handled separately with clear error message
+            # This fallback is only reached if yt-dlp fails for videos
+            logger.warning("TikTok extraction reached alternative method - yt-dlp likely failed")
+            return None
+        
         # General approach for other platforms or as fallback
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -1188,7 +1249,7 @@ def extract_instagram_content_robust(url: str) -> Dict[str, Any]:
         logger.info(f"Attempting robust Instagram extraction for: {url}")
         
         # Add delay to avoid rate limiting
-        delay = random.uniform(5, 12)
+        delay = random.uniform(1, 4)
         logger.info(f"Waiting {delay:.1f} seconds before attempting Instagram extraction...")
         time.sleep(delay)
         
@@ -1323,7 +1384,7 @@ def extract_instagram_content_robust(url: str) -> Dict[str, Any]:
                             "description": description,
                             "meta_description": description,
                             "uploader": author,
-                            "uploader_url": f"https://www.instagram.com/{author}" if author else "",
+                            "uploader_url": f"https://www.instagram.com/{author}/" if author else "",
                             "creator": author,
                             "images": thumbnails,
                             "url": url,
@@ -1343,12 +1404,12 @@ def extract_instagram_content_robust(url: str) -> Dict[str, Any]:
                 
                 # Add delay between attempts
                 if attempt_num < len(attempts):
-                    time.sleep(random.uniform(3, 6))
+                    time.sleep(random.uniform(2, 4))
                     
             except Exception as attempt_error:
                 logger.warning(f"Instagram extraction attempt {attempt_num} failed: {str(attempt_error)}")
                 if attempt_num < len(attempts):
-                    time.sleep(random.uniform(3, 6))
+                    time.sleep(random.uniform(2, 4))
         
         session.close()
         return None

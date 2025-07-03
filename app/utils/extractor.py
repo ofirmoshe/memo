@@ -223,12 +223,15 @@ def extract_and_save_content(user_id: str, url: str) -> Dict[str, Any]:
     text = extracted_content.get("text", "").lower()
     platform = extracted_content.get("platform", "").lower()
     
-    # Detect login/access-restricted pages
+    # Enhanced login detection - more comprehensive indicators
     login_indicators = [
         # Facebook-specific
         "log in to facebook",
-        "facebook - log in or sign up", 
-        "log into facebook",
+        "log into facebook", 
+        "facebook - log in or sign up",
+        "facebook for social connections",
+        "log in to facebook for social connections",
+        "access your facebook account",
         "you must log in to continue",
         # General login indicators
         "login required",
@@ -237,22 +240,60 @@ def extract_and_save_content(user_id: str, url: str) -> Dict[str, Any]:
         "please log in",
         "sign in to continue",
         "private content",
-        "restricted access"
+        "restricted access",
+        "requires login",
+        "sign up or log in",
+        "create account or log in"
     ]
     
     # Check if this is a login/restricted page
     is_login_page = False
-    if any(indicator in title for indicator in login_indicators) or \
-       any(indicator in text[:500] for indicator in login_indicators):  # Only check first 500 chars for efficiency
-        is_login_page = True
-        logger.info(f"Detected login/restricted access page for URL {url} - not saving to database")
+    detected_indicators = []
+    
+    # Check title for login indicators
+    for indicator in login_indicators:
+        if indicator in title:
+            is_login_page = True
+            detected_indicators.append(f"title: '{indicator}'")
+    
+    # Check text content for login indicators (first 500 chars for efficiency)
+    if not is_login_page:
+        text_sample = text[:500]
+        for indicator in login_indicators:
+            if indicator in text_sample:
+                is_login_page = True
+                detected_indicators.append(f"text: '{indicator}'")
+                break
+    
+    # Additional check for generic login page patterns
+    if not is_login_page:
+        generic_login_patterns = [
+            "connect and share with friends",
+            "engage with their social network", 
+            "access your.*account",
+            "platform allows users to"
+        ]
+        import re
+        for pattern in generic_login_patterns:
+            if re.search(pattern, title) or re.search(pattern, text_sample):
+                is_login_page = True
+                detected_indicators.append(f"pattern: '{pattern}'")
+                break
+    
+    # Log detection details for debugging
+    if is_login_page:
+        logger.info(f"Detected login/restricted access page for URL {url}")
+        logger.info(f"Detection reasons: {', '.join(detected_indicators)}")
+        logger.info(f"Title: '{extracted_content.get('title', '')}'")
+        logger.info(f"Text sample: '{text[:200]}...'")
     
     # Don't save login pages or access-restricted content
     if is_login_page:
         return {
             "success": False,
             "error": "Content requires authentication or is access-restricted",
-            "message": f"This {platform or 'content'} requires login or direct access to view. Please visit the URL directly."
+            "message": f"This {platform or 'content'} requires login or direct access to view. Please visit the URL directly.",
+            "detected_indicators": detected_indicators  # For debugging
         }
     
     # Analyze content with LLM
