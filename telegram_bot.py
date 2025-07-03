@@ -17,7 +17,6 @@ try:
     from app.models.user_profile import TelegramUserData, AuthProvider, UpdateUserProfileRequest
     PROFILES_AVAILABLE = True
 except ImportError:
-    logger.warning("User profile system not available - running in basic mode")
     PROFILES_AVAILABLE = False
 
 # Configure logging
@@ -483,6 +482,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         except:
             pass  # Use default name if profile fetch fails
     
+    # Build the welcome message dynamically
+    profile_cmd = "\n• /profile - View your profile information" if PROFILES_AVAILABLE else ""
+    profile_feature = "\n• Personal Profile: Track your usage and preferences" if PROFILES_AVAILABLE else ""
+    
     welcome_message = f"""
 🧠 Welcome to Memora{f', {display_name}' if display_name else ''}!
 Your AI-Powered Memory Assistant
@@ -505,14 +508,13 @@ Just ask me naturally! I can understand search requests like:
 
 📋 COMMANDS
 • /search [query] - Explicit search command
-• /stats - View your saved content statistics{f"{'• /profile - View your profile information' if PROFILES_AVAILABLE else ''}"}{f'
-' if PROFILES_AVAILABLE else ''}
+• /stats - View your saved content statistics{profile_cmd}
+
 ✨ SMART FEATURES
 • Intelligent Intent Detection: I automatically understand if you want to save or search
 • AI Vision: Advanced image analysis without blurry OCR
 • Context-Aware: Add descriptions to your content for better organization
-• Natural Language: Talk to me normally - no complex commands needed{f'
-• Personal Profile: Track your usage and preferences' if PROFILES_AVAILABLE else ''}
+• Natural Language: Talk to me normally - no complex commands needed{profile_feature}
 
 💡 EXAMPLES
 Saving:
