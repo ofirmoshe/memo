@@ -322,13 +322,22 @@ async def perform_search(user_id: str, query: str, message) -> None:
                         title = result.get('title', 'Text Note')
                         content_data = result.get('content_data', '')
                         tags = result.get('tags', [])
+                        item_id = result.get('id')
                         
                         # Send as a separate message for easy copying
                         copy_text = f"📝 **{title}**\n\n{content_data}"
                         if tags:
                             copy_text += f"\n\n🏷️ Tags: {', '.join(tags[:3])}"
                         
-                        await message.reply_text(copy_text, parse_mode='Markdown')
+                        # Add delete button for text notes too
+                        if item_id:
+                            keyboard = InlineKeyboardMarkup([
+                                [InlineKeyboardButton("🗑️ Delete", callback_data=f"delete:{item_id}")]
+                            ])
+                            await message.reply_text(copy_text, parse_mode='Markdown', reply_markup=keyboard)
+                        else:
+                            await message.reply_text(copy_text, parse_mode='Markdown')
+                        
                         text_notes_sent += 1
                         await asyncio.sleep(0.3)  # Small delay between messages
                     else:
@@ -473,7 +482,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             await message.reply_text("👋 Goodbye! Have a great day!")
             return
 
-    # Detect user intent for URLs first (keep existing logic)
+    # Detect user intent for URLs first (keep existing logic with fallback)
     if re.search(r'https?://', text):
         url, user_context = extract_url_and_context(text)
         if url and is_valid_url(url):
@@ -505,15 +514,29 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                         context_text = user_context[:150] + "..." if len(user_context) > 150 else user_context
                         reply_text += f"💭 Your Context: {context_text}"
                     await message.reply_text(reply_text)
+                    return  # Successfully processed URL, exit function
                 else:
-                    await message.reply_text(f"❌ Error processing URL: {response.text}")
+                    # URL extraction failed - fall back to saving as text note
+                    logger.warning(f"URL extraction failed for {url}: {response.text}")
+                    await message.reply_text("⚠️ URL extraction failed, saving as text note instead...")
+                    # Continue to save as text note (fall through to text saving logic)
             except requests.exceptions.Timeout:
-                await message.reply_text("⏰ Request timed out. The URL might be taking too long to process.")
+                # Timeout - fall back to saving as text note
+                logger.warning(f"URL extraction timed out for {url}")
+                await message.reply_text("⏰ URL extraction timed out, saving as text note instead...")
+                # Continue to save as text note (fall through to text saving logic)
             except Exception as e:
-                logger.error(f"Error processing URL for user {user_id}: {str(e)}")
-                await message.reply_text("❌ Error processing URL. Please try again.")
+                # Other errors - fall back to saving as text note
+                logger.error(f"Error processing URL {url}: {str(e)}")
+                await message.reply_text("❌ URL extraction error, saving as text note instead...")
+                # Continue to save as text note (fall through to text saving logic)
         else:
-            await message.reply_text("❌ Invalid URL format. Please send a valid URL.")
+            # Invalid URL format - save as text note
+            await message.reply_text("❌ Invalid URL format, saving as text note instead...")
+            # Continue to save as text note (fall through to text saving logic)
+        
+        # If we reach here, URL processing failed - save the entire message as text
+        await save_text_content(message, user_id, text)
         return
 
     # Use LLM router for all other text messages
@@ -530,63 +553,67 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     if intent == 'search':
         await perform_search(user_id, english_text, message)
     elif intent == 'save':
-        await message.reply_text("💾 Saving your content...")
-        try:
-            response = requests.post(
-                f"{BACKEND_URL}/save-text",
-                json={
-                    "user_id": user_id,
-                    "text_content": text,  # Use original text instead of english_text
-                    "user_context": None
-                },
-                timeout=15
-            )
-            if response.status_code == 200:
-                result = response.json()
-                title = result.get('title', 'N/A')
-                description = result.get('description', 'N/A')
-                tags = result.get('tags', [])
-                item_id = result.get('id')
-                original_text = result.get('original_text', '')
-                
-                # Use original text for display instead of LLM description
-                if len(title) > 100:
-                    title = title[:97] + "..."
-                
-                reply_text = "✅ Content Saved Successfully!\n\n"
-                reply_text += f"📌 Title: {title}\n"
-                
-                # Show brief confirmation instead of full text
-                if original_text:
-                    text_preview = original_text[:100] + "..." if len(original_text) > 100 else original_text
-                    reply_text += f"📝 Preview: {text_preview}\n"
-                else:
-                    # Fallback to description if original text not available
-                    if len(description) > 300:
-                        description = description[:297] + "..."
-                    reply_text += f"📝 Description: {description}\n"
-                    
-                reply_text += f"🏷️ Tags: {', '.join(tags[:5]) if tags else 'None'}"
-                # Inline delete button for saved item
-                if item_id:
-                    keyboard = InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🗑️ Delete", callback_data=f"delete:{item_id}")]
-                    ])
-                    await message.reply_text(reply_text, reply_markup=keyboard)
-                else:
-                    await message.reply_text(reply_text)
-            else:
-                await message.reply_text(f"❌ Error saving content: {response.text}")
-        except requests.exceptions.Timeout:
-            await message.reply_text("⏰ Request timed out while saving content.")
-        except Exception as e:
-            logger.error(f"Error saving text for user {user_id}: {str(e)}")
-            await message.reply_text("❌ Error saving content. Please try again.")
+        await save_text_content(message, user_id, text)
     else:  # intent == 'general'
         if answer:
             await message.reply_text(answer)
         else:
             await message.reply_text("🤖 I'm not sure what you want to do. Please use 'find ...' to search or 'save ...' to save content.")
+
+async def save_text_content(message, user_id: str, text: str) -> None:
+    """Helper function to save text content."""
+    await message.reply_text("💾 Saving your content...")
+    try:
+        response = requests.post(
+            f"{BACKEND_URL}/save-text",
+            json={
+                "user_id": user_id,
+                "text_content": text,  # Use original text instead of english_text
+                "user_context": None
+            },
+            timeout=15
+        )
+        if response.status_code == 200:
+            result = response.json()
+            title = result.get('title', 'N/A')
+            description = result.get('description', 'N/A')
+            tags = result.get('tags', [])
+            item_id = result.get('id')
+            original_text = result.get('original_text', '')
+            
+            # Use original text for display instead of LLM description
+            if len(title) > 100:
+                title = title[:97] + "..."
+            
+            reply_text = "✅ Content Saved Successfully!\n\n"
+            reply_text += f"📌 Title: {title}\n"
+            
+            # Show brief confirmation instead of full text
+            if original_text:
+                text_preview = original_text[:100] + "..." if len(original_text) > 100 else original_text
+                reply_text += f"📝 Preview: {text_preview}\n"
+            else:
+                # Fallback to description if original text not available
+                if len(description) > 300:
+                    description = description[:297] + "..."
+                reply_text += f"📝 Description: {description}\n"
+                
+            reply_text += f"🏷️ Tags: {', '.join(tags[:5]) if tags else 'None'}"
+            # Inline delete button for saved item
+            if item_id:
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🗑️ Delete", callback_data=f"delete:{item_id}")]
+                ])
+                await message.reply_text(reply_text, reply_markup=keyboard)
+            else:
+                await message.reply_text(reply_text)
+        else:
+            await message.reply_text(f"❌ Error saving content: {response.text}")
+    except requests.exceptions.Timeout:
+        await message.reply_text("⏰ Request timed out while saving content.")
+    except Exception as e:
+        logger.error(f"Error saving text for user {user_id}: {str(e)}")
+        await message.reply_text("❌ Error saving content. Please try again.")
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: str) -> None:
     """Handle document uploads."""
