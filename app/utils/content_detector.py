@@ -35,12 +35,12 @@ class ContentDetector:
             # Instagram
             {"platform": "instagram", "domains": ["instagram.com", "www.instagram.com", "instagr.am"],
              "path_patterns": [r"/p/[\w-]+", r"/reel/[\w-]+", r"/stories/[\w\.]+", r"/tv/[\w-]+"]},
-            # YouTube
+            # YouTube - Updated to handle youtu.be format and standard youtube.com
             {"platform": "youtube", "domains": ["youtube.com", "www.youtube.com", "youtu.be", "m.youtube.com", "youtube-nocookie.com"],
-             "path_patterns": [r"/watch\?", r"/shorts/", r"/playlist", r"/c/", r"/channel/", r"/user/"]},
-            # Facebook
+             "path_patterns": [r"/watch\?", r"/shorts/", r"/playlist", r"/c/", r"/channel/", r"/user/", r"/[\w-]+$"]},  # Added pattern for youtu.be/VIDEO_ID
+            # Facebook - Updated to handle new share URL formats
             {"platform": "facebook", "domains": ["facebook.com", "www.facebook.com", "fb.com", "fb.watch", "m.facebook.com"],
-             "path_patterns": [r"/[\w\.]+/posts/", r"/watch/", r"/story.php", r"/video.php", r"/events/", r"/share/"]},
+             "path_patterns": [r"/[\w\.]+/posts/", r"/watch/", r"/story\.php", r"/video\.php", r"/events/", r"/share/v/", r"/share/p/", r"/share/r/"]},  # Added share patterns
             # LinkedIn
             {"platform": "linkedin", "domains": ["linkedin.com", "www.linkedin.com", "lnkd.in"],
              "path_patterns": [r"/posts/", r"/pulse/", r"/feed/update/", r"/in/"]},

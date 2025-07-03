@@ -43,7 +43,7 @@ def is_social_media_url(url: str) -> bool:
     domain = parsed_url.netloc.lower()
     path = parsed_url.path.lower()
     
-    # Pattern-based detection for social media platforms
+    # Updated pattern-based detection for social media platforms
     social_media_patterns = [
         # TikTok - includes shortened URLs and various patterns
         {"domain": ["tiktok.com", "vt.tiktok.com", "vm.tiktok.com", "m.tiktok.com"], 
@@ -53,13 +53,13 @@ def is_social_media_url(url: str) -> bool:
         {"domain": ["instagram.com", "www.instagram.com", "instagr.am"],
          "path_patterns": [r"/p/[\w-]+", r"/reel/[\w-]+", r"/stories/[\w\.]+", r"/tv/[\w-]+"]}
         ,
-        # YouTube
+        # YouTube - Updated to handle youtu.be format
         {"domain": ["youtube.com", "www.youtube.com", "youtu.be", "m.youtube.com", "youtube-nocookie.com"],
-         "path_patterns": [r"/watch\?", r"/shorts/", r"/playlist", r"/c/", r"/channel/", r"/user/"]}
+         "path_patterns": [r"/watch\?", r"/shorts/", r"/playlist", r"/c/", r"/channel/", r"/user/", r"/[\w-]+$"]}  # Added pattern for youtu.be/VIDEO_ID
         ,
-        # Facebook
+        # Facebook - Updated to handle new share URL formats
         {"domain": ["facebook.com", "www.facebook.com", "fb.com", "fb.watch", "m.facebook.com"],
-         "path_patterns": [r"/[\w\.]+/posts/", r"/watch/", r"/story.php", r"/video.php", r"/events/", r"/share/"]}
+         "path_patterns": [r"/[\w\.]+/posts/", r"/watch/", r"/story\.php", r"/video\.php", r"/events/", r"/share/v/", r"/share/p/", r"/share/r/"]}  # Added share patterns
         ,
         # LinkedIn
         {"domain": ["linkedin.com", "www.linkedin.com", "lnkd.in"],
