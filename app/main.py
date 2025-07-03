@@ -195,7 +195,8 @@ async def save_text(request: SaveTextRequest, db: Session = Depends(get_db)):
             "tags": item.tags,
             "content_type": item.content_type,
             "platform": item.platform,
-            "media_type": item.media_type
+            "media_type": item.media_type,
+            "original_text": request.text_content
         }
         
     except Exception as e:

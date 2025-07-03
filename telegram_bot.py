@@ -273,8 +273,8 @@ async def perform_search(user_id: str, query: str, message) -> None:
 
                 result_text = f"{i}. {title}\n"
                 if media_type == 'text' and content_data:
-                    content_preview = content_data[:150] + "..." if len(content_data) > 150 else content_data
-                    result_text += f"📝 {content_preview}\n"
+                    # For text notes, show full content without truncation
+                    result_text += f"📝 {content_data}\n"
                 elif description:
                     desc_preview = description[:150] + "..." if len(description) > 150 else description
                     result_text += f"📝 {desc_preview}\n"
@@ -525,13 +525,24 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 description = result.get('description', 'N/A')
                 tags = result.get('tags', [])
                 item_id = result.get('id')
+                original_text = result.get('original_text', '')
+                
+                # Use original text for display instead of LLM description
                 if len(title) > 100:
                     title = title[:97] + "..."
-                if len(description) > 300:
-                    description = description[:297] + "..."
+                
                 reply_text = "✅ Content Saved Successfully!\n\n"
                 reply_text += f"📌 Title: {title}\n"
-                reply_text += f"📝 Description: {description}\n"
+                
+                # Show original text content without truncation
+                if original_text:
+                    reply_text += f"📝 Content: {original_text}\n"
+                else:
+                    # Fallback to description if original text not available
+                    if len(description) > 300:
+                        description = description[:297] + "..."
+                    reply_text += f"📝 Description: {description}\n"
+                    
                 reply_text += f"🏷️ Tags: {', '.join(tags[:5]) if tags else 'None'}"
                 # Inline delete button for saved item
                 if item_id:
