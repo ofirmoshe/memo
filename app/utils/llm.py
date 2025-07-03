@@ -205,6 +205,46 @@ def analyze_content_with_llm(content: Dict[str, str]) -> Dict[str, Any]:
     Returns:
         Analysis results
     """
+    # Check if this is a fallback extraction (e.g., Facebook URL pattern analysis)
+    is_fallback = content.get("is_fallback_extraction", False)
+    platform = content.get("platform", "").lower()
+    extraction_note = content.get("extraction_note", "")
+    
+    # For Facebook fallback extractions, provide a simpler, more honest description
+    if is_fallback and platform == "facebook":
+        title = content.get("title", "Facebook Content")
+        content_type = content.get("raw_metadata", {}).get("content_type", "Facebook Content")
+        content_id = content.get("raw_metadata", {}).get("content_id", "")
+        
+        # Create a straightforward description
+        if "Video" in content_type:
+            description = f"Facebook video content that requires direct access to view. {extraction_note}"
+            tags = ["Facebook", "video", "social-media", "requires-access"]
+        elif "Post" in content_type:
+            description = f"Facebook post content that requires direct access to view. {extraction_note}"
+            tags = ["Facebook", "post", "social-media", "requires-access"]
+        elif "Reel" in content_type:
+            description = f"Facebook Reel (short video) that requires direct access to view. {extraction_note}"
+            tags = ["Facebook", "reel", "video", "social-media", "requires-access"]
+        elif "Event" in content_type:
+            description = f"Facebook event listing that requires direct access to view details. {extraction_note}"
+            tags = ["Facebook", "event", "social-media", "requires-access"]
+        elif "Photo" in content_type:
+            description = f"Facebook photo content that requires direct access to view. {extraction_note}"
+            tags = ["Facebook", "photo", "image", "social-media", "requires-access"]
+        else:
+            description = f"Facebook content that requires direct access to view. {extraction_note}"
+            tags = ["Facebook", "social-media", "requires-access"]
+        
+        # Add content ID to tags if available
+        if content_id:
+            tags.append(f"id-{content_id}")
+        
+        return {
+            "description": description,
+            "tags": tags[:7]  # Limit to 7 tags
+        }
+    
     # Prepare content for analysis
     title = content.get("title", "")
     text = content.get("text", "")

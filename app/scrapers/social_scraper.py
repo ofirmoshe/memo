@@ -9,9 +9,37 @@ from urllib.parse import urlparse
 import sys
 import requests
 import time
+import random
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+def create_robust_session() -> requests.Session:
+    """Create a robust requests session with proper retry logic and connection pooling."""
+    session = requests.Session()
+    
+    # Configure retry strategy
+    retry_strategy = Retry(
+        total=3,
+        backoff_factor=2,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["HEAD", "GET", "OPTIONS"]
+    )
+    
+    # Configure adapter
+    adapter = HTTPAdapter(
+        max_retries=retry_strategy,
+        pool_connections=1,  # Limit pool connections to avoid socket exhaustion
+        pool_maxsize=1,      # Limit pool size to avoid socket exhaustion
+        pool_block=True      # Block if pool is full instead of creating new connections
+    )
+    
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    
+    return session
 
 def scrape_social_media(url: str) -> Dict[str, Any]:
     """
@@ -50,70 +78,54 @@ def scrape_social_media(url: str) -> Dict[str, Any]:
                     result["success"] = True
                     return result
             
-            # Try multiple approaches with different timeout and retry strategies
+            # For Facebook, skip yt-dlp attempts due to connection issues and go straight to alternatives
             success = False
             metadata = None
             
-            # Approach 1: Basic yt-dlp command with shorter timeout
-            if not success:
-                try:
-                    base_cmd = [
-                        "yt-dlp",
-                        "--skip-download",  # Don't download the actual video
-                        "--write-info-json",  # Write metadata to JSON
-                        "--no-warnings",  # Reduce output noise
-                        "--ignore-errors",  # Continue on download errors
-                        "--no-playlist",   # Only download the video, not the playlist
-                        "--socket-timeout", "15",  # 15 second socket timeout
-                        "--retries", "2",  # Only 2 retries
-                        "-o", f"{temp_dir}/%(id)s",  # Output filename pattern
-                        url
-                    ]
-                    
-                    logger.info(f"Running basic yt-dlp command: {' '.join(base_cmd)}")
-                    process = subprocess.run(base_cmd, capture_output=True, text=True, timeout=30)
-                    
-                    if process.returncode == 0:
-                        json_files = [f for f in os.listdir(temp_dir) if f.endswith('.info.json')]
-                        if json_files:
-                            with open(os.path.join(temp_dir, json_files[0]), 'r', encoding='utf-8') as f:
-                                metadata = json.load(f)
-                            success = True
-                            logger.info("Successfully extracted with basic command")
-                    else:
-                        logger.warning(f"Basic yt-dlp failed with code {process.returncode}: {process.stderr}")
-                        
-                except subprocess.TimeoutExpired:
-                    logger.warning("Basic yt-dlp command timed out")
-                except Exception as e:
-                    logger.warning(f"Basic yt-dlp command failed: {str(e)}")
-            
-            # Approach 2: With user agent and headers
-            if not success:
+            if platform == "Facebook":
+                logger.info("Facebook URL detected - using alternative extraction methods to avoid connection issues")
+                
+                # Add initial delay to avoid rate limiting
+                time.sleep(random.uniform(5, 10))
+                
+                # Try enhanced Facebook extraction with better connection handling
+                result = extract_facebook_content_robust(url)
+                if result:
+                    result["success"] = True
+                    return result
+                
+                # If that fails, use URL-based extraction as final fallback
+                result = extract_facebook_info_from_url(url)
+                if result:
+                    result["success"] = True
+                    return result
+            else:
+                # For non-Facebook platforms, try yt-dlp with reduced attempts
+                # Add a random delay before starting to avoid rate limiting
+                initial_delay = random.uniform(3, 6)
+                time.sleep(initial_delay)
+                
+                # Try only one simplified yt-dlp approach to avoid socket exhaustion
                 try:
                     # Clean up temp directory
                     for f in os.listdir(temp_dir):
                         if f.endswith('.info.json'):
                             os.remove(os.path.join(temp_dir, f))
                     
-                    user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                    enhanced_cmd = [
+                    simple_cmd = [
                         "yt-dlp",
                         "--skip-download",
                         "--write-info-json",
                         "--no-warnings",
                         "--ignore-errors",
-                        "--no-playlist",
-                        "--socket-timeout", "10",
+                        "--socket-timeout", "15",
                         "--retries", "1",
-                        "--add-header", f"User-Agent: {user_agent}",
-                        "--add-header", "Accept-Language: en-US,en;q=0.9",
                         "-o", f"{temp_dir}/%(id)s",
                         url
                     ]
                     
-                    logger.info(f"Running enhanced yt-dlp command with headers")
-                    process = subprocess.run(enhanced_cmd, capture_output=True, text=True, timeout=25)
+                    logger.info(f"Running simplified yt-dlp command for {platform}")
+                    process = subprocess.run(simple_cmd, capture_output=True, text=True, timeout=30)
                     
                     if process.returncode == 0:
                         json_files = [f for f in os.listdir(temp_dir) if f.endswith('.info.json')]
@@ -121,129 +133,33 @@ def scrape_social_media(url: str) -> Dict[str, Any]:
                             with open(os.path.join(temp_dir, json_files[0]), 'r', encoding='utf-8') as f:
                                 metadata = json.load(f)
                             success = True
-                            logger.info("Successfully extracted with enhanced command")
+                            logger.info("Successfully extracted with simplified command")
                     else:
-                        logger.warning(f"Enhanced yt-dlp failed: {process.stderr}")
+                        logger.warning(f"Simplified yt-dlp failed: {process.stderr}")
                         
                 except subprocess.TimeoutExpired:
-                    logger.warning("Enhanced yt-dlp command timed out")
+                    logger.warning("Simplified yt-dlp command timed out")
                 except Exception as e:
-                    logger.warning(f"Enhanced yt-dlp command failed: {str(e)}")
+                    logger.warning(f"Simplified yt-dlp command failed: {str(e)}")
+                
+                # If yt-dlp failed, try alternative methods
+                if not success:
+                    logger.info("yt-dlp failed, trying alternative extraction methods")
+                    
+                    # For YouTube, try oEmbed API
+                    if platform == "YouTube":
+                        result = extract_youtube_content(url, temp_dir, force_alternative=True)
+                        if result:
+                            result["success"] = True
+                            return result
+                    
+                    # For other platforms, try basic web scraping
+                    alternative_result = try_alternative_extraction(url, platform)
+                    if alternative_result:
+                        alternative_result["success"] = True
+                        return alternative_result
             
-            # Approach 3: Platform-specific optimizations
-            if not success and platform in ["TikTok", "Instagram", "Facebook", "YouTube"]:
-                try:
-                    # Clean up temp directory
-                    for f in os.listdir(temp_dir):
-                        if f.endswith('.info.json'):
-                            os.remove(os.path.join(temp_dir, f))
-                    
-                    platform_cmd = [
-                        "yt-dlp",
-                        "--skip-download",
-                        "--write-info-json",
-                        "--no-warnings",
-                        "--ignore-errors",
-                        "--no-playlist",
-                        "--socket-timeout", "8",
-                        "--retries", "1",
-                    ]
-                    
-                    # Platform-specific user agents and configurations
-                    if platform == "TikTok":
-                        platform_cmd.extend([
-                            "--add-header", "User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
-                            "--extractor-args", "tiktok:api_hostname=api16-normal-c-useast1a.tiktokv.com"
-                        ])
-                    elif platform == "Instagram":
-                        platform_cmd.extend([
-                            "--add-header", "User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
-                            "--extractor-args", "instagram:include_comments=false"
-                        ])
-                    elif platform == "Facebook":
-                        platform_cmd.extend([
-                            "--add-header", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                            "--add-header", "Accept-Language: en-US,en;q=0.9",
-                            "--add-header", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                            "--extractor-args", "facebook:legacy_api=false",
-                            "--extractor-args", "facebook:tab=timeline",
-                        ])
-                    elif platform == "YouTube":
-                        platform_cmd.extend([
-                            "--add-header", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                            "--youtube-skip-dash-manifest",
-                            "--extractor-args", "youtube:player_client=web,mweb",
-                            "--extractor-args", "youtube:player_skip=webpage,configs",
-                            "--extractor-args", "youtube:skip=translated_subs",
-                        ])
-                    
-                    platform_cmd.extend(["-o", f"{temp_dir}/%(id)s", url])
-                    
-                    logger.info(f"Running platform-specific command for {platform}")
-                    process = subprocess.run(platform_cmd, capture_output=True, text=True, timeout=20)
-                    
-                    if process.returncode == 0:
-                        json_files = [f for f in os.listdir(temp_dir) if f.endswith('.info.json')]
-                        if json_files:
-                            with open(os.path.join(temp_dir, json_files[0]), 'r', encoding='utf-8') as f:
-                                metadata = json.load(f)
-                            success = True
-                            logger.info(f"Successfully extracted with {platform}-specific command")
-                    else:
-                        logger.warning(f"Platform-specific yt-dlp failed: {process.stderr}")
-                        
-                except subprocess.TimeoutExpired:
-                    logger.warning("Platform-specific yt-dlp command timed out")
-                except Exception as e:
-                    logger.warning(f"Platform-specific yt-dlp command failed: {str(e)}")
-            
-            # If all yt-dlp approaches failed, try alternative methods
-            if not success:
-                logger.info("All yt-dlp approaches failed, trying alternative extraction methods")
-                
-                # For YouTube, try oEmbed API
-                if platform == "YouTube":
-                    result = extract_youtube_content(url, temp_dir, force_alternative=True)
-                    if result:
-                        result["success"] = True
-                        return result
-                
-                # For Facebook, try oEmbed API
-                if platform == "Facebook":
-                    result = extract_facebook_oembed(url)
-                    if result:
-                        result["success"] = True
-                        return result
-                    
-                    # If oEmbed fails, try URL-based extraction as final fallback
-                    result = extract_facebook_info_from_url(url)
-                    if result:
-                        result["success"] = True
-                        return result
-                
-                # For other platforms, try basic web scraping
-                alternative_result = try_alternative_extraction(url, platform)
-                if alternative_result:
-                    alternative_result["success"] = True
-                    return alternative_result
-                
-                # Complete failure
-                logger.error("All extraction methods failed")
-                return {
-                    "success": False,
-                    "error": "All extraction methods failed. The content might be private, geo-blocked, or the platform has anti-scraping measures.",
-                    "title": "Failed to extract",
-                    "text": f"Failed to extract content from {url}",
-                    "meta_description": "",
-                    "uploader": "",
-                    "uploader_url": "",
-                    "images": [],
-                    "url": url,
-                    "platform": platform,
-                    "raw_metadata": {}
-                }
-            
-            # Process the successfully extracted metadata
+            # If we have successfully extracted metadata, process it
             if metadata:
                 # Extract relevant information based on platform
                 title = metadata.get('title', 'Untitled')
@@ -304,6 +220,22 @@ def scrape_social_media(url: str) -> Dict[str, Any]:
                         "upload_date": metadata.get('upload_date')
                     }
                 }
+            
+            # Complete failure
+            logger.error("All extraction methods failed")
+            return {
+                "success": False,
+                "error": "All extraction methods failed. The content might be private, geo-blocked, or the platform has anti-scraping measures.",
+                "title": "Failed to extract",
+                "text": f"Failed to extract content from {url}",
+                "meta_description": "",
+                "uploader": "",
+                "uploader_url": "",
+                "images": [],
+                "url": url,
+                "platform": platform,
+                "raw_metadata": {}
+            }
     
     except Exception as e:
         logger.error(f"Error scraping social media URL {url}: {str(e)}")
@@ -322,187 +254,211 @@ def scrape_social_media(url: str) -> Dict[str, Any]:
             "raw_metadata": {}
         }
 
-def try_alternative_extraction(url: str, platform: str) -> Dict[str, Any]:
+def extract_facebook_content_robust(url: str) -> Dict[str, Any]:
     """
-    Try alternative extraction methods when yt-dlp fails.
+    Robust Facebook content extraction with proper connection handling.
     
     Args:
-        url: URL to extract from
-        platform: Platform name
+        url: Facebook URL to extract content from
         
     Returns:
-        Dictionary with extracted content or None
+        Dictionary with extracted content or None if failed
     """
     try:
-        logger.info(f"Trying alternative extraction for {platform}")
+        logger.info(f"Attempting robust Facebook extraction for: {url}")
         
-        # Platform-specific headers and approaches
-        if platform == "Facebook":
-            # Facebook-specific alternative extraction
+        # First, try a much longer delay to avoid connection pool exhaustion
+        delay = random.uniform(10, 20)
+        logger.info(f"Waiting {delay:.1f} seconds before attempting Facebook extraction...")
+        time.sleep(delay)
+        
+        # Create a robust session
+        session = create_robust_session()
+        
+        # Try Facebook Graph API approach (if we had an app token)
+        # Since we don't have that, try a browser-like request with mobile URL
+        try:
+            mobile_url = url.replace("www.facebook.com", "m.facebook.com")
+            
             headers = {
-                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 "Accept-Language": "en-US,en;q=0.5",
                 "Accept-Encoding": "gzip, deflate",
-                "Connection": "keep-alive",
-                "Upgrade-Insecure-Requests": "1",
+                "Connection": "close",  # Use connection close to avoid pool issues
+                "Cache-Control": "no-cache",
+                "Pragma": "no-cache",
+            }
+            
+            session.headers.update(headers)
+            
+            logger.info(f"Attempting mobile Facebook extraction: {mobile_url}")
+            response = session.get(mobile_url, timeout=30)
+            
+            if response.status_code == 200:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(response.content, 'html.parser')
+                
+                # Try to extract meaningful content
+                title = ""
+                description = ""
+                author = ""
+                
+                # Look for Open Graph meta tags first
+                og_title = soup.find('meta', property='og:title')
+                if og_title and og_title.get('content'):
+                    title = og_title.get('content', '').strip()
+                
+                og_description = soup.find('meta', property='og:description')
+                if og_description and og_description.get('content'):
+                    description = og_description.get('content', '').strip()
+                
+                # Try to get author/page info
+                og_site = soup.find('meta', property='og:site_name')
+                if og_site and og_site.get('content'):
+                    author = og_site.get('content', '').strip()
+                
+                # If we didn't get good content from OG tags, try content extraction
+                if not title or title in ["Facebook", "Facebook - Log In or Sign Up"]:
+                    # Try to find post content
+                    content_selectors = [
+                        '[data-testid="post_message"]',
+                        '.userContent',
+                        '.story_body_container',
+                        'div[role="article"]',
+                        '.mbs._6m6'
+                    ]
+                    
+                    for selector in content_selectors:
+                        element = soup.select_one(selector)
+                        if element:
+                            extracted_text = element.get_text(strip=True)
+                            if extracted_text and len(extracted_text) > 10:
+                                if not title or title in ["Facebook", "Facebook - Log In or Sign Up"]:
+                                    title = extracted_text[:100] + ("..." if len(extracted_text) > 100 else "")
+                                if not description:
+                                    description = extracted_text
+                                break
+                
+                # Check if we got meaningful content
+                if title and title not in ["Facebook", "Facebook - Log In or Sign Up", ""] and len(title) > 5:
+                    # Create detailed response
+                    text = f"Title: {title}\n"
+                    if author:
+                        text += f"Author/Page: {author}\n"
+                    if description and description != title:
+                        text += f"Content: {description}\n"
+                    text += f"Source: Facebook\n"
+                    
+                    session.close()
+                    
+                    return {
+                        "title": title,
+                        "text": text,
+                        "description": description,
+                        "meta_description": description,
+                        "uploader": author,
+                        "uploader_url": "",
+                        "creator": author,
+                        "images": [],
+                        "url": url,
+                        "platform": "Facebook",
+                        "duration": None,
+                        "view_count": None,
+                        "like_count": None,
+                        "raw_metadata": {
+                            "extraction_method": "mobile_browser_extraction",
+                            "mobile_url": mobile_url
+                        }
+                    }
+                else:
+                    logger.warning(f"No meaningful content extracted from Facebook mobile page. Title: '{title}'")
+            else:
+                logger.warning(f"Facebook mobile request failed with status: {response.status_code}")
+        
+        except Exception as mobile_error:
+            logger.warning(f"Mobile Facebook extraction failed: {str(mobile_error)}")
+        
+        finally:
+            session.close()
+        
+        # Add delay before next attempt
+        time.sleep(random.uniform(5, 10))
+        
+        # If mobile extraction failed, try a different approach - desktop with different headers
+        try:
+            session = create_robust_session()
+            
+            desktop_headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Connection": "close",
+                "Cache-Control": "no-cache",
                 "Sec-Fetch-Dest": "document",
                 "Sec-Fetch-Mode": "navigate",
                 "Sec-Fetch-Site": "none",
+                "Sec-Fetch-User": "?1",
             }
             
-            # Try mobile Facebook URL transformation
-            mobile_url = url.replace("www.facebook.com", "m.facebook.com")
-            logger.info(f"Trying mobile Facebook URL: {mobile_url}")
+            session.headers.update(desktop_headers)
             
-            try:
-                response = requests.get(mobile_url, headers=headers, timeout=15, allow_redirects=True)
-                if response.status_code == 200:
-                    from bs4 import BeautifulSoup
-                    soup = BeautifulSoup(response.content, 'html.parser')
-                    
-                    # Facebook mobile-specific extraction
-                    title = ""
-                    description = ""
-                    
-                    # Try various Facebook-specific selectors
-                    title_selectors = [
-                        'meta[property="og:title"]',
-                        'meta[name="twitter:title"]',
-                        'title',
-                        '[data-testid="post_message"]',
-                        '.story_body_container',
-                    ]
-                    
-                    for selector in title_selectors:
-                        element = soup.select_one(selector)
-                        if element:
-                            if element.name == 'meta':
-                                title = element.get('content', '')
-                            else:
-                                title = element.get_text(strip=True)
-                            if title:
-                                break
-                    
-                    # Try to get description
-                    desc_selectors = [
-                        'meta[property="og:description"]',
-                        'meta[name="description"]',
-                        'meta[name="twitter:description"]',
-                        '[data-testid="post_message"]',
-                        '.userContent',
-                    ]
-                    
-                    for selector in desc_selectors:
-                        element = soup.select_one(selector)
-                        if element:
-                            if element.name == 'meta':
-                                description = element.get('content', '')
-                            else:
-                                description = element.get_text(strip=True)
-                            if description:
-                                break
-                    
-                    # Try to get thumbnail
-                    thumbnails = []
-                    og_image = soup.find('meta', property='og:image')
-                    if og_image:
-                        thumbnails.append(og_image.get('content', ''))
-                    
-                    if title and title != "Facebook":
-                        text = f"Title: {title}\n"
-                        if description:
-                            text += f"Description: {description}\n"
-                        
-                        return {
-                            "title": title,
-                            "text": text,
-                            "description": description,
-                            "meta_description": description,
-                            "uploader": "",
-                            "uploader_url": "",
-                            "creator": "",
-                            "images": thumbnails,
-                            "url": url,
-                            "platform": platform,
-                            "duration": None,
-                            "view_count": None,
-                            "like_count": None,
-                            "raw_metadata": {}
-                        }
-            except Exception as fb_error:
-                logger.warning(f"Facebook mobile extraction failed: {str(fb_error)}")
-        
-        # General approach for other platforms or as fallback
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-            "Accept-Encoding": "gzip, deflate",
-            "Connection": "keep-alive",
-        }
-        
-        response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code == 200:
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(response.content, 'html.parser')
+            logger.info(f"Attempting desktop Facebook extraction: {url}")
+            response = session.get(url, timeout=30)
             
-            # Try to extract basic information from meta tags
-            title = ""
-            description = ""
-            
-            # Try Open Graph meta tags
-            og_title = soup.find('meta', property='og:title')
-            if og_title:
-                title = og_title.get('content', '')
-            
-            og_description = soup.find('meta', property='og:description')
-            if og_description:
-                description = og_description.get('content', '')
-            
-            # Try standard meta tags if OG tags not found
-            if not title:
-                title_tag = soup.find('title')
-                if title_tag:
-                    title = title_tag.get_text(strip=True)
-            
-            if not description:
-                desc_tag = soup.find('meta', attrs={'name': 'description'})
-                if desc_tag:
-                    description = desc_tag.get('content', '')
-            
-            # Try to get thumbnail
-            thumbnails = []
-            og_image = soup.find('meta', property='og:image')
-            if og_image:
-                thumbnails.append(og_image.get('content', ''))
-            
-            if title and title != "Untitled":
-                text = f"Title: {title}\n"
-                if description:
-                    text += f"Description: {description}\n"
+            if response.status_code == 200:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(response.content, 'html.parser')
                 
-                return {
-                    "title": title,
-                    "text": text,
-                    "description": description,
-                    "meta_description": description,
-                    "uploader": "",
-                    "uploader_url": "",
-                    "creator": "",
-                    "images": thumbnails,
-                    "url": url,
-                    "platform": platform,
-                    "duration": None,
-                    "view_count": None,
-                    "like_count": None,
-                    "raw_metadata": {}
-                }
+                # Extract content using similar method
+                title = ""
+                description = ""
+                
+                og_title = soup.find('meta', property='og:title')
+                if og_title and og_title.get('content'):
+                    title = og_title.get('content', '').strip()
+                
+                og_description = soup.find('meta', property='og:description')
+                if og_description and og_description.get('content'):
+                    description = og_description.get('content', '').strip()
+                
+                if title and title not in ["Facebook", "Facebook - Log In or Sign Up", ""] and len(title) > 5:
+                    text = f"Title: {title}\n"
+                    if description and description != title:
+                        text += f"Description: {description}\n"
+                    text += f"Source: Facebook\n"
+                    
+                    session.close()
+                    
+                    return {
+                        "title": title,
+                        "text": text,
+                        "description": description,
+                        "meta_description": description,
+                        "uploader": "",
+                        "uploader_url": "",
+                        "creator": "",
+                        "images": [],
+                        "url": url,
+                        "platform": "Facebook",
+                        "duration": None,
+                        "view_count": None,
+                        "like_count": None,
+                        "raw_metadata": {
+                            "extraction_method": "desktop_browser_extraction"
+                        }
+                    }
+            
+        except Exception as desktop_error:
+            logger.warning(f"Desktop Facebook extraction failed: {str(desktop_error)}")
+        
+        finally:
+            session.close()
         
         return None
         
     except Exception as e:
-        logger.warning(f"Alternative extraction failed: {str(e)}")
+        logger.error(f"Robust Facebook extraction failed: {str(e)}")
         return None
 
 def extract_youtube_content(url: str, temp_dir: str, force_alternative: bool = False) -> Dict[str, Any]:
@@ -719,59 +675,90 @@ def extract_facebook_oembed(url: str) -> Dict[str, Any]:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "application/json",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Connection": "keep-alive",
         }
         
-        try:
-            response = requests.get(oembed_url, headers=headers, timeout=10)
-            if response.status_code == 200:
-                oembed_data = response.json()
+        # Try multiple times with different delays
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            try:
+                if attempt > 0:
+                    delay = random.uniform(3, 8)
+                    logger.info(f"Retrying Facebook oEmbed API (attempt {attempt + 1}/{max_attempts}) after {delay:.1f}s delay")
+                    time.sleep(delay)
                 
-                # Extract available information
-                title = oembed_data.get('title', 'Facebook Post')
-                author = oembed_data.get('author_name', '')
-                author_url = oembed_data.get('author_url', '')
-                html_content = oembed_data.get('html', '')
+                # Use session for better connection handling
+                session = requests.Session()
+                session.headers.update(headers)
                 
-                # Try to extract more info from the HTML if available
-                description = ""
-                if html_content:
-                    from bs4 import BeautifulSoup
-                    soup = BeautifulSoup(html_content, 'html.parser')
-                    # Look for text content in the embedded HTML
-                    text_elements = soup.find_all(text=True)
-                    description = ' '.join([t.strip() for t in text_elements if t.strip()])
+                response = session.get(oembed_url, timeout=15)
+                session.close()
                 
-                # Create response
-                text = f"Title: {title}\n"
-                if author:
-                    text += f"Author: {author}\n"
-                if description:
-                    text += f"Content: {description}\n"
-                
-                return {
-                    "title": title,
-                    "text": text,
-                    "description": description,
-                    "meta_description": description,
-                    "uploader": author,
-                    "uploader_url": author_url,
-                    "creator": author,
-                    "images": [],  # oEmbed doesn't typically include images for Facebook
-                    "url": url,
-                    "platform": "Facebook",
-                    "duration": None,
-                    "view_count": None,
-                    "like_count": None,
-                    "raw_metadata": {
-                        "oembed_data": oembed_data
-                    }
-                }
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"Facebook oEmbed API request failed: {str(e)}")
-        except json.JSONDecodeError as e:
-            logger.warning(f"Facebook oEmbed API returned invalid JSON: {str(e)}")
-        except Exception as e:
-            logger.warning(f"Error processing Facebook oEmbed response: {str(e)}")
+                if response.status_code == 200:
+                    oembed_data = response.json()
+                    
+                    # Extract available information
+                    title = oembed_data.get('title', 'Facebook Post')
+                    author = oembed_data.get('author_name', '')
+                    author_url = oembed_data.get('author_url', '')
+                    html_content = oembed_data.get('html', '')
+                    
+                    # Try to extract more info from the HTML if available
+                    description = ""
+                    if html_content:
+                        from bs4 import BeautifulSoup
+                        soup = BeautifulSoup(html_content, 'html.parser')
+                        # Look for text content in the embedded HTML
+                        text_elements = soup.find_all(text=True)
+                        description = ' '.join([t.strip() for t in text_elements if t.strip()])
+                    
+                    # Only return if we got meaningful content
+                    if title and title not in ['Facebook Post', 'Facebook', '']:
+                        # Create response
+                        text = f"Title: {title}\n"
+                        if author:
+                            text += f"Author: {author}\n"
+                        if description:
+                            text += f"Content: {description}\n"
+                        
+                        return {
+                            "title": title,
+                            "text": text,
+                            "description": description,
+                            "meta_description": description,
+                            "uploader": author,
+                            "uploader_url": author_url,
+                            "creator": author,
+                            "images": [],  # oEmbed doesn't typically include images for Facebook
+                            "url": url,
+                            "platform": "Facebook",
+                            "duration": None,
+                            "view_count": None,
+                            "like_count": None,
+                            "raw_metadata": {
+                                "oembed_data": oembed_data,
+                                "extraction_method": "oembed_api"
+                            }
+                        }
+                    else:
+                        logger.warning(f"Facebook oEmbed returned generic/empty title: {title}")
+                        
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"Facebook oEmbed API request failed (attempt {attempt + 1}): {str(e)}")
+                if attempt == max_attempts - 1:  # Last attempt
+                    break
+                continue
+            except json.JSONDecodeError as e:
+                logger.warning(f"Facebook oEmbed API returned invalid JSON (attempt {attempt + 1}): {str(e)}")
+                if attempt == max_attempts - 1:  # Last attempt
+                    break
+                continue
+            except Exception as e:
+                logger.warning(f"Error processing Facebook oEmbed response (attempt {attempt + 1}): {str(e)}")
+                if attempt == max_attempts - 1:  # Last attempt
+                    break
+                continue
         
         return None
         
@@ -793,56 +780,315 @@ def extract_facebook_info_from_url(url: str) -> Dict[str, Any]:
         logger.info(f"Trying URL-based Facebook info extraction for: {url}")
         
         # Parse different Facebook URL patterns
-        if "/share/r/" in url:
-            # Share URL format
-            title = "Facebook Shared Post"
-            description = "A post shared on Facebook"
+        content_type = ""
+        content_description = ""
+        
+        if "/share/v/" in url:
+            # New video share URL format
+            content_type = "Facebook Video"
+            content_description = "Video content shared on Facebook - unable to extract specific details due to Facebook's privacy settings."
+        elif "/share/p/" in url:
+            # New post share URL format
+            content_type = "Facebook Post"
+            content_description = "Text/image post shared on Facebook - unable to extract specific content due to Facebook's privacy restrictions."
+        elif "/share/r/" in url:
+            # Share URL format (reel/story)
+            content_type = "Facebook Reel"
+            content_description = "Short-form video content (Reel) shared on Facebook - unable to extract specific details due to platform restrictions."
         elif "/posts/" in url:
             # Direct post URL
-            title = "Facebook Post"
-            description = "A Facebook post"
+            content_type = "Facebook Post"
+            content_description = "Facebook post - unable to extract specific content due to privacy settings."
         elif "/watch/" in url or "/video/" in url:
             # Video URL
-            title = "Facebook Video"
-            description = "A video shared on Facebook"
+            content_type = "Facebook Video"
+            content_description = "Video posted on Facebook - unable to extract specific details due to platform restrictions."
         elif "/events/" in url:
             # Event URL
-            title = "Facebook Event"
-            description = "A Facebook event"
+            content_type = "Facebook Event"
+            content_description = "Facebook event listing - unable to extract specific details due to privacy settings."
         elif "/photo/" in url or "/photos/" in url:
             # Photo URL
-            title = "Facebook Photo"
-            description = "A photo shared on Facebook"
+            content_type = "Facebook Photo"
+            content_description = "Photo shared on Facebook - unable to extract specific details due to platform restrictions."
         else:
             # Generic Facebook content
-            title = "Facebook Content"
-            description = "Content shared on Facebook"
+            content_type = "Facebook Content"
+            content_description = "Facebook content - unable to extract specific details due to platform restrictions."
         
-        # Create basic response
+        # Extract ID from URL if possible
+        url_id = ""
+        page_info = ""
+        
+        if "/share/" in url:
+            # Extract ID from share URLs
+            parts = url.split("/")
+            for i, part in enumerate(parts):
+                if part in ["v", "p", "r"] and i + 1 < len(parts):
+                    url_id = parts[i + 1].split("?")[0]  # Remove query parameters
+                    break
+        
+        # Try to extract page/user info from URL
+        if "facebook.com/" in url:
+            url_parts = url.split("facebook.com/")
+            if len(url_parts) > 1:
+                path_part = url_parts[1].split("/")[0]
+                if path_part and path_part not in ["share", "watch", "video", "photo", "photos", "posts", "events"]:
+                    page_info = f"From page/user: {path_part}"
+        
+        # Create a more informative title based on the content type and ID
+        if url_id:
+            title = f"{content_type} (ID: {url_id})"
+        else:
+            title = content_type
+        
+        # Create comprehensive description
+        full_description = content_description
+        if page_info:
+            full_description += f" {page_info}."
+        
+        # Add helpful note
+        helpful_note = "Note: Facebook restricts automated content extraction. To view the actual content, please click the link to open in Facebook."
+        
+        # Create detailed text
         text = f"Title: {title}\n"
-        text += f"Description: {description}\n"
-        text += f"Note: Extracted from URL structure due to Facebook's anti-scraping measures\n"
+        text += f"Content Type: {content_type}\n"
+        text += f"Description: {full_description}\n"
+        if url_id:
+            text += f"Content ID: {url_id}\n"
+        if page_info:
+            text += f"{page_info}\n"
+        text += f"Platform: Facebook\n"
+        text += f"URL: {url}\n"
+        text += f"{helpful_note}\n"
         
         return {
             "title": title,
             "text": text,
-            "description": description,
-            "meta_description": description,
-            "uploader": "",
+            "description": full_description,
+            "meta_description": full_description,
+            "uploader": page_info.replace("From page/user: ", "") if page_info else "",
             "uploader_url": "",
-            "creator": "",
+            "creator": page_info.replace("From page/user: ", "") if page_info else "",
             "images": [],
             "url": url,
             "platform": "Facebook",
             "duration": None,
             "view_count": None,
             "like_count": None,
+            "is_fallback_extraction": True,  # Flag to indicate this is a fallback
+            "extraction_note": helpful_note,
             "raw_metadata": {
                 "extraction_method": "url_pattern_analysis",
-                "note": "Limited data due to Facebook's privacy and anti-scraping measures"
+                "content_type": content_type,
+                "content_id": url_id,
+                "page_info": page_info,
+                "note": "Facebook content extraction limited due to platform restrictions"
             }
         }
         
     except Exception as e:
         logger.error(f"Error in Facebook URL analysis: {str(e)}")
-        return None 
+        return None
+
+def try_alternative_extraction(url: str, platform: str) -> Dict[str, Any]:
+    """
+    Try alternative extraction methods when yt-dlp fails.
+    
+    Args:
+        url: URL to extract from
+        platform: Platform name
+        
+    Returns:
+        Dictionary with extracted content or None
+    """
+    try:
+        logger.info(f"Trying alternative extraction for {platform}")
+        
+        # Add delay before alternative extraction
+        time.sleep(random.uniform(2, 5))
+        
+        # Platform-specific headers and approaches
+        if platform == "Facebook":
+            # Facebook-specific alternative extraction with better error handling
+            headers = {
+                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5",
+                "Accept-Encoding": "gzip, deflate",
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "none",
+            }
+            
+            # Try mobile Facebook URL transformation
+            mobile_url = url.replace("www.facebook.com", "m.facebook.com")
+            logger.info(f"Trying mobile Facebook URL: {mobile_url}")
+            
+            try:
+                # Use session for better connection handling
+                session = requests.Session()
+                session.headers.update(headers)
+                
+                response = session.get(mobile_url, timeout=20, allow_redirects=True)
+                if response.status_code == 200:
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup(response.content, 'html.parser')
+                    
+                    # Facebook mobile-specific extraction
+                    title = ""
+                    description = ""
+                    
+                    # Try various Facebook-specific selectors
+                    title_selectors = [
+                        'meta[property="og:title"]',
+                        'meta[name="twitter:title"]',
+                        'title',
+                        '[data-testid="post_message"]',
+                        '.story_body_container',
+                    ]
+                    
+                    for selector in title_selectors:
+                        element = soup.select_one(selector)
+                        if element:
+                            if element.name == 'meta':
+                                title = element.get('content', '')
+                            else:
+                                title = element.get_text(strip=True)
+                            if title and title != "Facebook":
+                                break
+                    
+                    # Try to get description
+                    desc_selectors = [
+                        'meta[property="og:description"]',
+                        'meta[name="description"]',
+                        'meta[name="twitter:description"]',
+                        '[data-testid="post_message"]',
+                        '.userContent',
+                    ]
+                    
+                    for selector in desc_selectors:
+                        element = soup.select_one(selector)
+                        if element:
+                            if element.name == 'meta':
+                                description = element.get('content', '')
+                            else:
+                                description = element.get_text(strip=True)
+                            if description:
+                                break
+                    
+                    # Try to get thumbnail
+                    thumbnails = []
+                    og_image = soup.find('meta', property='og:image')
+                    if og_image:
+                        thumbnails.append(og_image.get('content', ''))
+                    
+                    if title and title not in ["Facebook", "Facebook - Log In or Sign Up"]:
+                        text = f"Title: {title}\n"
+                        if description:
+                            text += f"Description: {description}\n"
+                        
+                        return {
+                            "title": title,
+                            "text": text,
+                            "description": description,
+                            "meta_description": description,
+                            "uploader": "",
+                            "uploader_url": "",
+                            "creator": "",
+                            "images": thumbnails,
+                            "url": url,
+                            "platform": platform,
+                            "duration": None,
+                            "view_count": None,
+                            "like_count": None,
+                            "raw_metadata": {
+                                "extraction_method": "mobile_scraping"
+                            }
+                        }
+                session.close()
+            except Exception as fb_error:
+                logger.warning(f"Facebook mobile extraction failed: {str(fb_error)}")
+        
+        # General approach for other platforms or as fallback
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Encoding": "gzip, deflate",
+            "Connection": "keep-alive",
+        }
+        
+        try:
+            session = requests.Session()
+            session.headers.update(headers)
+            
+            response = session.get(url, timeout=15)
+            if response.status_code == 200:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(response.content, 'html.parser')
+                
+                # Try to extract basic information from meta tags
+                title = ""
+                description = ""
+                
+                # Try Open Graph meta tags
+                og_title = soup.find('meta', property='og:title')
+                if og_title:
+                    title = og_title.get('content', '')
+                
+                og_description = soup.find('meta', property='og:description')
+                if og_description:
+                    description = og_description.get('content', '')
+                
+                # Try standard meta tags if OG tags not found
+                if not title:
+                    title_tag = soup.find('title')
+                    if title_tag:
+                        title = title_tag.get_text(strip=True)
+                
+                if not description:
+                    desc_tag = soup.find('meta', attrs={'name': 'description'})
+                    if desc_tag:
+                        description = desc_tag.get('content', '')
+                
+                # Try to get thumbnail
+                thumbnails = []
+                og_image = soup.find('meta', property='og:image')
+                if og_image:
+                    thumbnails.append(og_image.get('content', ''))
+                
+                if title and title != "Untitled":
+                    text = f"Title: {title}\n"
+                    if description:
+                        text += f"Description: {description}\n"
+                    
+                    return {
+                        "title": title,
+                        "text": text,
+                        "description": description,
+                        "meta_description": description,
+                        "uploader": "",
+                        "uploader_url": "",
+                        "creator": "",
+                        "images": thumbnails,
+                        "url": url,
+                        "platform": platform,
+                        "duration": None,
+                        "view_count": None,
+                        "like_count": None,
+                        "raw_metadata": {
+                            "extraction_method": "web_scraping"
+                        }
+                    }
+            session.close()
+        except Exception as general_error:
+            logger.warning(f"General web scraping failed: {str(general_error)}")
+        
+        return None
+        
+    except Exception as e:
+        logger.warning(f"Alternative extraction failed: {str(e)}")
+        return None
