@@ -44,19 +44,10 @@ def start_telegram_bot():
         logger.info("⏳ Waiting 10 seconds for backend to fully initialize...")
         time.sleep(10)
         
-        # Import and run the enhanced telegram bot with user profiles
-        try:
-            logger.info("🔍 Attempting to import enhanced Telegram bot...")
-            from telegram_bot_enhanced import main as telegram_main
-            logger.info("✅ Using enhanced Telegram bot with user profiles")
-        except ImportError as e:
-            logger.warning(f"⚠️ Enhanced bot not available ({e}), falling back to basic bot")
-            try:
-                from telegram_bot import main as telegram_main
-                logger.info("✅ Using basic Telegram bot")
-            except ImportError as e2:
-                logger.error(f"❌ Could not import any Telegram bot: {e2}")
-                raise
+        # Import and run the unified telegram bot
+        logger.info("🔍 Importing unified Telegram bot...")
+        from telegram_bot import main as telegram_main
+        logger.info("✅ Using unified Telegram bot (with optional profile features)")
         
         logger.info("🚀 Starting Telegram bot main function...")
         telegram_main()

@@ -11,12 +11,25 @@ from app.utils.file_processor import FileProcessor
 from io import BytesIO
 from app.utils.llm import detect_intent_and_translate
 
+# User Profile imports (optional)
+try:
+    from app.services.user_profile_service import UserProfileService
+    from app.models.user_profile import TelegramUserData, AuthProvider, UpdateUserProfileRequest
+    PROFILES_AVAILABLE = True
+except ImportError:
+    logger.warning("User profile system not available - running in basic mode")
+    PROFILES_AVAILABLE = False
+
 # Configure logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# Log profile system availability after logger is configured
+if not PROFILES_AVAILABLE:
+    logger.warning("User profile system not available - running in basic mode")
 
 # Configuration
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "7918946951:AAGZRHNAn-bhzMYQ_QetQelM_9B5AoHxNPg")
@@ -48,6 +61,57 @@ if not TELEGRAM_BOT_TOKEN:
 
 # Initialize file processor
 file_processor = FileProcessor()
+
+# Enhanced user management with profiles (with fallback)
+async def get_user_id_with_profile(update: Update) -> str:
+    """Get user ID and optionally create/update user profile."""
+    user_id = str(update.effective_user.id)
+    
+    if not PROFILES_AVAILABLE:
+        return user_id
+    
+    try:
+        user = update.effective_user
+        
+        # Create Telegram user data
+        telegram_data = TelegramUserData(
+            telegram_user_id=user.id,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            username=user.username,
+            language_code=user.language_code,
+            is_bot=user.is_bot,
+            is_premium=getattr(user, 'is_premium', False)
+        )
+        
+        # Create or update user profile via service
+        with UserProfileService() as service:
+            profile = service.create_from_telegram(telegram_data)
+            logger.info(f"User profile ready for {profile.display_name or user_id}")
+            
+        return user_id
+        
+    except Exception as e:
+        logger.error(f"Error managing user profile: {str(e)}")
+        # Fallback to basic user ID for compatibility
+        return user_id
+
+async def track_activity(user_id: str, activity_type: str, activity_data: dict = None):
+    """Track user activity with the profile service (optional)."""
+    if not PROFILES_AVAILABLE:
+        return
+        
+    try:
+        with UserProfileService() as service:
+            service.update_activity(
+                user_id=user_id,
+                activity_type=activity_type,
+                activity_data=activity_data,
+                source_platform="telegram"
+            )
+    except Exception as e:
+        logger.error(f"Error tracking activity for user {user_id}: {str(e)}")
+        # Don't fail the main operation if activity tracking fails
 
 def detect_user_intent(text: str) -> str:
     """
@@ -240,6 +304,13 @@ async def send_file_to_user(message, item_data: dict, user_id: str) -> bool:
 async def perform_search(user_id: str, query: str, message) -> None:
     """Perform search and send results to user."""
     try:
+        # Track search activity
+        await track_activity(user_id, "search", {
+            "query": query,
+            "query_length": len(query),
+            "timestamp": message.date.isoformat() if message.date else None
+        })
+        
         response = requests.post(
             f"{BACKEND_URL}/search",
             json={
@@ -252,6 +323,13 @@ async def perform_search(user_id: str, query: str, message) -> None:
         
         if response.status_code == 200:
             results = response.json()
+            
+            # Track search results
+            await track_activity(user_id, "search_results", {
+                "query": query,
+                "results_count": len(results),
+                "has_results": len(results) > 0
+            })
             
             # Filter results by similarity threshold (0.35 minimum)
             filtered_results = [result for result in results if result.get('similarity_score', 0) >= 0.35]
@@ -386,8 +464,28 @@ def is_valid_url(url: str) -> bool:
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /start is issued."""
-    welcome_message = """
-🧠 Welcome to Memora - Your AI-Powered Memory Assistant!
+    user_id = await get_user_id_with_profile(update)
+    
+    # Track the start command usage
+    await track_activity(user_id, "start_command", {
+        "command": "/start",
+        "is_new_user": True
+    })
+    
+    # Get user profile for personalization
+    display_name = update.effective_user.first_name
+    if PROFILES_AVAILABLE:
+        try:
+            with UserProfileService() as service:
+                profile = service.get_profile(user_id)
+                if profile:
+                    display_name = profile.display_name or display_name
+        except:
+            pass  # Use default name if profile fetch fails
+    
+    welcome_message = f"""
+🧠 Welcome to Memora{f', {display_name}' if display_name else ''}!
+Your AI-Powered Memory Assistant
 
 I can help you save and search different types of content:
 
@@ -407,13 +505,14 @@ Just ask me naturally! I can understand search requests like:
 
 📋 COMMANDS
 • /search [query] - Explicit search command
-• /stats - View your saved content statistics
-
+• /stats - View your saved content statistics{f"{'• /profile - View your profile information' if PROFILES_AVAILABLE else ''}"}{f'
+' if PROFILES_AVAILABLE else ''}
 ✨ SMART FEATURES
 • Intelligent Intent Detection: I automatically understand if you want to save or search
 • AI Vision: Advanced image analysis without blurry OCR
 • Context-Aware: Add descriptions to your content for better organization
-• Natural Language: Talk to me normally - no complex commands needed
+• Natural Language: Talk to me normally - no complex commands needed{f'
+• Personal Profile: Track your usage and preferences' if PROFILES_AVAILABLE else ''}
 
 💡 EXAMPLES
 Saving:
@@ -433,10 +532,17 @@ Just start typing - I'm smart enough to know what you want! 🚀
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle different types of messages (text, URLs, files)."""
-    user_id = str(update.effective_user.id)
+    user_id = await get_user_id_with_profile(update)
     message = update.message
     
     try:
+        # Track general message activity
+        await track_activity(user_id, "message_received", {
+            "message_type": "text" if message.text else "media",
+            "has_caption": bool(message.caption),
+            "message_length": len(message.text) if message.text else 0
+        })
+        
         # Handle different message types
         if message.document:
             await handle_document(update, context, user_id)
@@ -488,6 +594,13 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         if url and is_valid_url(url):
             await message.reply_text("🔗 Processing URL...")
             try:
+                # Track URL processing
+                await track_activity(user_id, "save_url", {
+                    "url": url,
+                    "has_context": bool(user_context),
+                    "context_length": len(user_context) if user_context else 0
+                })
+                
                 response = requests.post(
                     f"{BACKEND_URL}/extract",
                     json={
@@ -499,6 +612,14 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 )
                 if response.status_code == 200:
                     result = response.json()
+                    
+                    # Track successful URL save
+                    await track_activity(user_id, "save_success", {
+                        "item_id": result.get('id'),
+                        "content_type": "url",
+                        "url": url
+                    })
+                    
                     title = result.get('title', 'N/A')
                     description = result.get('description', 'N/A')
                     tags = result.get('tags', [])
@@ -563,7 +684,14 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def save_text_content(message, user_id: str, text: str) -> None:
     """Helper function to save text content."""
     await message.reply_text("💾 Saving your content...")
+    
     try:
+        # Track save activity
+        await track_activity(user_id, "save_text", {
+            "content_length": len(text),
+            "timestamp": message.date.isoformat() if message.date else None
+        })
+        
         response = requests.post(
             f"{BACKEND_URL}/save-text",
             json={
@@ -575,6 +703,14 @@ async def save_text_content(message, user_id: str, text: str) -> None:
         )
         if response.status_code == 200:
             result = response.json()
+            
+            # Track successful save
+            await track_activity(user_id, "save_success", {
+                "item_id": result.get('id'),
+                "content_type": "text",
+                "tags_count": len(result.get('tags', []))
+            })
+            
             title = result.get('title', 'N/A')
             description = result.get('description', 'N/A')
             tags = result.get('tags', [])
@@ -634,6 +770,13 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE, us
         return
     await message.reply_text("📄 Processing document...")
     try:
+        # Track document upload
+        await track_activity(user_id, "upload_document", {
+            "filename": document.file_name,
+            "mime_type": document.mime_type,
+            "file_size": document.file_size
+        })
+        
         file = await context.bot.get_file(document.file_id)
         file_data = await file.download_as_bytearray()
         files = {'file': (document.file_name, bytes(file_data), document.mime_type)}
@@ -649,6 +792,14 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE, us
         )
         if response.status_code == 200:
             result = response.json()
+            
+            # Track successful upload
+            await track_activity(user_id, "save_success", {
+                "item_id": result.get('id'),
+                "content_type": "document",
+                "filename": document.file_name
+            })
+            
             filename = document.file_name
             title = result.get('title', 'N/A')
             description = result.get('description', 'N/A')
@@ -691,6 +842,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE, user_
     await message.reply_text("📸 Analyzing image with AI vision...")
     
     try:
+        # Track image upload
+        await track_activity(user_id, "upload_image", {
+            "file_size": photo.file_size,
+            "has_caption": bool(caption)
+        })
+        
         # Download photo
         file = await context.bot.get_file(photo.file_id)
         file_data = await file.download_as_bytearray()
@@ -715,6 +872,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE, user_
         
         if response.status_code == 200:
             result = response.json()
+            
+            # Track successful upload
+            await track_activity(user_id, "save_success", {
+                "item_id": result.get('id'),
+                "content_type": "image"
+            })
             
             # Use plain text formatting to avoid escape character issues
             title = result.get('title', 'N/A')
@@ -746,7 +909,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE, user_
 
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle search command."""
-    user_id = str(update.effective_user.id)
+    user_id = await get_user_id_with_profile(update)
     
     # Get search query from command arguments
     query = ' '.join(context.args)
@@ -768,28 +931,44 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show user statistics."""
-    user_id = str(update.effective_user.id)
+    user_id = await get_user_id_with_profile(update)
     
     try:
+        # Get stats from the API
         response = requests.get(
             f"{BACKEND_URL}/user/{user_id}/stats",
             timeout=10
         )
         
         if response.status_code == 200:
-            stats_data = response.json()
+            api_stats = response.json()
             
-            # Use plain text formatting to avoid Markdown parsing issues
             reply_text = f"📊 Your Memora Statistics\n\n"
-            reply_text += f"📝 Total Items: {stats_data.get('total_items', 0)}\n"
-            reply_text += f"🔗 URLs: {stats_data.get('urls', 0)}\n"
-            reply_text += f"📝 Text Notes: {stats_data.get('texts', 0)}\n"
-            reply_text += f"📸 Images: {stats_data.get('images', 0)}\n"
-            reply_text += f"📄 Documents: {stats_data.get('documents', 0)}\n\n"
+            reply_text += f"📝 Content Overview:\n"
+            reply_text += f"• Total Items: {api_stats.get('total_items', 0)}\n"
+            reply_text += f"• URLs: {api_stats.get('urls', 0)}\n"
+            reply_text += f"• Text Notes: {api_stats.get('texts', 0)}\n"
+            reply_text += f"• Images: {api_stats.get('images', 0)}\n"
+            reply_text += f"• Documents: {api_stats.get('documents', 0)}\n"
             
-            if stats_data.get('top_tags'):
-                reply_text += f"🏷️ Top Tags:\n"
-                for tag, count in stats_data['top_tags']:
+            # Add profile stats if available
+            if PROFILES_AVAILABLE:
+                try:
+                    with UserProfileService() as service:
+                        profile_stats = service.get_user_stats(user_id)
+                        
+                    reply_text += f"\n🔍 Activity Stats:\n"
+                    reply_text += f"• Searches: {profile_stats.get('total_searches', 0)}\n"
+                    reply_text += f"• Days Active: {profile_stats.get('days_active', 0)}\n"
+                    
+                    if profile_stats.get('last_active'):
+                        reply_text += f"• Last Active: {profile_stats['last_active'].strftime('%B %d, %Y')}\n"
+                except Exception as e:
+                    logger.warning(f"Could not get profile stats: {e}")
+            
+            if api_stats.get('top_tags'):
+                reply_text += f"\n🏷️ Top Tags:\n"
+                for tag, count in api_stats['top_tags']:
                     # Escape special characters that might cause Markdown issues
                     safe_tag = str(tag).replace('*', '').replace('_', '').replace('[', '').replace(']', '')
                     reply_text += f"  • {safe_tag} ({count})\n"
@@ -819,6 +998,11 @@ async def handle_delete_callback(update: Update, context: ContextTypes.DEFAULT_T
             )
             if response.status_code == 200:
                 await query.edit_message_text("🗑️ Item deleted!")
+                # Track deletion activity
+                await track_activity(user_id, "delete_item", {
+                    "item_id": item_id,
+                    "method": "inline_button"
+                })
             else:
                 await query.edit_message_text(f"❌ Failed to delete item: {response.text}")
         except Exception as e:
@@ -826,7 +1010,7 @@ async def handle_delete_callback(update: Update, context: ContextTypes.DEFAULT_T
 
 async def delete_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Delete all items for the user."""
-    user_id = str(update.effective_user.id)
+    user_id = await get_user_id_with_profile(update)
     try:
         response = requests.post(
             f"{BACKEND_URL}/delete-all-items",
@@ -836,10 +1020,109 @@ async def delete_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         if response.status_code == 200:
             result = response.json()
             await update.message.reply_text(f"🗑️ {result.get('message', 'All items deleted!')}")
+            # Track mass deletion
+            await track_activity(user_id, "delete_all_items", {
+                "method": "command"
+            })
         else:
             await update.message.reply_text(f"❌ Failed to delete all items: {response.text}")
     except Exception as e:
         await update.message.reply_text(f"❌ Error deleting all items: {str(e)}")
+
+async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show user profile information."""
+    if not PROFILES_AVAILABLE:
+        await update.message.reply_text("❌ Profile system not available.")
+        return
+        
+    user_id = await get_user_id_with_profile(update)
+    
+    try:
+        with UserProfileService() as service:
+            profile = service.get_profile(user_id)
+            
+            if profile:
+                # Debug: Check what data we have from Telegram
+                telegram_user = update.effective_user
+                logger.info(f"Telegram user data: ID={telegram_user.id}, username={telegram_user.username}, first_name={telegram_user.first_name}, last_name={telegram_user.last_name}")
+                
+                reply_text = f"👤 Your Profile\n\n"
+                
+                # Track what needs to be updated
+                updates_needed = {}
+                
+                # Handle display name (first name)
+                if profile.first_name:
+                    reply_text += f"Name: {profile.first_name}"
+                    if profile.last_name:
+                        reply_text += f" {profile.last_name}"
+                    reply_text += "\n"
+                elif telegram_user.first_name:
+                    reply_text += f"Name: {telegram_user.first_name}"
+                    if telegram_user.last_name:
+                        reply_text += f" {telegram_user.last_name}"
+                    reply_text += " (updating...)\n"
+                    updates_needed['first_name'] = telegram_user.first_name
+                    if telegram_user.last_name:
+                        updates_needed['last_name'] = telegram_user.last_name
+                else:
+                    reply_text += f"Name: Not set\n"
+                
+                # Handle missing last name even if first name exists
+                if profile.first_name and not profile.last_name and telegram_user.last_name:
+                    updates_needed['last_name'] = telegram_user.last_name
+                    reply_text = reply_text.replace("Name: " + profile.first_name + "\n", 
+                                                    f"Name: {profile.first_name} {telegram_user.last_name} (updating...)\n")
+                
+                # Handle missing first name if we have it from Telegram
+                if not profile.first_name and telegram_user.first_name:
+                    updates_needed['first_name'] = telegram_user.first_name
+                
+                # Better username handling
+                if profile.username:
+                    reply_text += f"Username: @{profile.username}\n"
+                elif telegram_user.username:
+                    reply_text += f"Username: @{telegram_user.username} (updating...)\n"
+                    updates_needed['username'] = telegram_user.username
+                else:
+                    reply_text += f"Username: Not set (no @username in Telegram)\n"
+                
+                # Apply any needed updates
+                if updates_needed:
+                    try:
+                        service.update_profile(user_id, UpdateUserProfileRequest(**updates_needed))
+                        logger.info(f"Updated profile for user {user_id} with: {updates_needed}")
+                    except Exception as e:
+                        logger.error(f"Failed to update profile: {e}")
+                
+                reply_text += f"Language: {profile.primary_language.upper()}\n"
+                reply_text += f"Country: {profile.country_code or 'Not set'}\n"
+                reply_text += f"Member since: {profile.created_at.strftime('%B %Y')}\n"
+                reply_text += f"Last active: {profile.last_active_at.strftime('%B %d, %Y') if profile.last_active_at else 'Today'}\n\n"
+                
+                reply_text += f"📊 Statistics:\n"
+                reply_text += f"• Total items saved: {profile.total_items}\n"
+                reply_text += f"• Searches performed: {profile.total_searches}\n"
+                reply_text += f"• Days active: {profile.days_active}\n"
+                
+                if profile.is_premium:
+                    reply_text += f"\n⭐ Premium Member"
+                
+                # Show connected auth providers
+                if profile.auth_providers:
+                    reply_text += f"\n\n🔗 Connected Accounts:\n"
+                    for auth_provider in profile.auth_providers:
+                        icon = "📱" if auth_provider.provider == "telegram" else "🔗"
+                        status = " (Primary)" if auth_provider.is_primary else ""
+                        reply_text += f"• {icon} {auth_provider.provider.title()}{status}\n"
+                
+                await update.message.reply_text(reply_text)
+            else:
+                await update.message.reply_text("❌ Could not retrieve profile information.")
+                
+    except Exception as e:
+        logger.error(f"Error getting profile for user {user_id}: {str(e)}")
+        await update.message.reply_text("❌ Error retrieving profile information.")
 
 def main() -> None:
     """Start the bot."""
@@ -851,6 +1134,8 @@ def main() -> None:
     application.add_handler(CommandHandler("search", search))
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("deleteall", delete_all))
+    if PROFILES_AVAILABLE:
+        application.add_handler(CommandHandler("profile", profile))
     application.add_handler(CallbackQueryHandler(handle_delete_callback))
     
     # Handle all types of messages
@@ -860,7 +1145,7 @@ def main() -> None:
     ))
 
     # Run the bot until the user presses Ctrl-C
-    logger.info("Starting Telegram bot...")
+    logger.info(f"Starting {'enhanced ' if PROFILES_AVAILABLE else ''}Telegram bot...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
