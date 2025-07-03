@@ -425,6 +425,12 @@ def extract_facebook_content_robust(url: str) -> Dict[str, Any]:
                     }
                 else:
                     logger.warning(f"No meaningful content extracted from Facebook mobile page. Title: '{title}'")
+                    
+                    # Check if this is a login page that should not be processed
+                    if title in ["Facebook", "Facebook - Log In or Sign Up", "Log in to Facebook to Connect with Friends and Family", "Log Into Facebook"] or "log in" in title.lower() or "login" in title.lower():
+                        logger.info("Facebook page requires login - not processing this content")
+                        session.close()
+                        return None
             else:
                 logger.warning(f"Facebook mobile request failed with status: {response.status_code}")
         
@@ -500,6 +506,12 @@ def extract_facebook_content_robust(url: str) -> Dict[str, Any]:
                             "extraction_method": "desktop_browser_extraction"
                         }
                     }
+                else:
+                    # Check if this is a login page that should not be processed
+                    if title in ["Facebook", "Facebook - Log In or Sign Up", "Log in to Facebook to Connect with Friends and Family", "Log Into Facebook"] or (title and ("log in" in title.lower() or "login" in title.lower())):
+                        logger.info("Facebook page requires login - not processing this content")
+                        session.close()
+                        return None
             
         except Exception as desktop_error:
             logger.warning(f"Desktop Facebook extraction failed: {str(desktop_error)}")
@@ -847,6 +859,10 @@ def extract_facebook_info_from_url(url: str) -> Dict[str, Any]:
             # Share URL format (reel/story)
             content_type = "Facebook Reel"
             content_description = "Short-form video content (Reel) shared on Facebook - unable to extract specific details due to platform restrictions."
+        elif "/share/" in url and re.search(r"/share/[\w]+/", url):
+            # Generic share URL format with direct content ID
+            content_type = "Facebook Content"
+            content_description = "Facebook content shared via link - unable to extract specific details due to Facebook's privacy restrictions."
         elif "/posts/" in url:
             # Direct post URL
             content_type = "Facebook Post"
@@ -873,12 +889,19 @@ def extract_facebook_info_from_url(url: str) -> Dict[str, Any]:
         page_info = ""
         
         if "/share/" in url:
-            # Extract ID from share URLs
+            # Extract ID from share URLs - handle both typed (v/, p/, r/) and direct (/content_id/) formats
             parts = url.split("/")
             for i, part in enumerate(parts):
-                if part in ["v", "p", "r"] and i + 1 < len(parts):
-                    url_id = parts[i + 1].split("?")[0]  # Remove query parameters
-                    break
+                if part == "share" and i + 1 < len(parts):
+                    next_part = parts[i + 1]
+                    if next_part in ["v", "p", "r"] and i + 2 < len(parts):
+                        # Typed format: /share/v/ID or /share/p/ID or /share/r/ID
+                        url_id = parts[i + 2].split("?")[0]  # Remove query parameters
+                        break
+                    elif next_part not in ["v", "p", "r"] and next_part:
+                        # Direct format: /share/ID
+                        url_id = next_part.split("?")[0]  # Remove query parameters
+                        break
         
         # Try to extract page/user info from URL
         if "facebook.com/" in url:
@@ -1135,6 +1158,12 @@ def try_alternative_extraction(url: str, platform: str) -> Dict[str, Any]:
                             "extraction_method": "web_scraping"
                         }
                     }
+                else:
+                    # Check if this is a login page that should not be processed
+                    if title in ["Facebook", "Facebook - Log In or Sign Up", "Log in to Facebook to Connect with Friends and Family", "Log Into Facebook"] or (title and ("log in" in title.lower() or "login" in title.lower())):
+                        logger.info("Facebook page requires login - not processing this content")
+                        session.close()
+                        return None
             session.close()
         except Exception as general_error:
             logger.warning(f"General web scraping failed: {str(general_error)}")

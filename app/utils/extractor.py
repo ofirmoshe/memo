@@ -59,8 +59,7 @@ def is_social_media_url(url: str) -> bool:
         ,
         # Facebook - Updated to handle new share URL formats
         {"domain": ["facebook.com", "www.facebook.com", "fb.com", "fb.watch", "m.facebook.com"],
-         "path_patterns": [r"/[\w\.]+/posts/", r"/watch/", r"/story\.php", r"/video\.php", r"/events/", r"/share/v/", r"/share/p/", r"/share/r/"]}  # Added share patterns
-        ,
+         "path_patterns": [r"/[\w\.]+/posts/", r"/watch/", r"/story\.php", r"/video\.php", r"/events/", r"/share/v/", r"/share/p/", r"/share/r/", r"/share/[\w]+/"]},  # Added share patterns including direct content ID format
         # LinkedIn
         {"domain": ["linkedin.com", "www.linkedin.com", "lnkd.in"],
          "path_patterns": [r"/posts/", r"/pulse/", r"/feed/update/", r"/in/"]}
@@ -218,6 +217,43 @@ def extract_and_save_content(user_id: str, url: str) -> Dict[str, Any]:
     
     # Extract content from URL
     extracted_content = extract_content(url)
+    
+    # Check if the extracted content is a login page or access-restricted content
+    title = extracted_content.get("title", "").lower()
+    text = extracted_content.get("text", "").lower()
+    platform = extracted_content.get("platform", "").lower()
+    
+    # Detect login/access-restricted pages
+    login_indicators = [
+        # Facebook-specific
+        "log in to facebook",
+        "facebook - log in or sign up", 
+        "log into facebook",
+        "you must log in to continue",
+        # General login indicators
+        "login required",
+        "access denied", 
+        "authentication required",
+        "please log in",
+        "sign in to continue",
+        "private content",
+        "restricted access"
+    ]
+    
+    # Check if this is a login/restricted page
+    is_login_page = False
+    if any(indicator in title for indicator in login_indicators) or \
+       any(indicator in text[:500] for indicator in login_indicators):  # Only check first 500 chars for efficiency
+        is_login_page = True
+        logger.info(f"Detected login/restricted access page for URL {url} - not saving to database")
+    
+    # Don't save login pages or access-restricted content
+    if is_login_page:
+        return {
+            "success": False,
+            "error": "Content requires authentication or is access-restricted",
+            "message": f"This {platform or 'content'} requires login or direct access to view. Please visit the URL directly."
+        }
     
     # Analyze content with LLM
     analysis = analyze_content_with_llm(extracted_content)

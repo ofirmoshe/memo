@@ -40,7 +40,7 @@ class ContentDetector:
              "path_patterns": [r"/watch\?", r"/shorts/", r"/playlist", r"/c/", r"/channel/", r"/user/", r"/[\w-]+$"]},  # Added pattern for youtu.be/VIDEO_ID
             # Facebook - Updated to handle new share URL formats
             {"platform": "facebook", "domains": ["facebook.com", "www.facebook.com", "fb.com", "fb.watch", "m.facebook.com"],
-             "path_patterns": [r"/[\w\.]+/posts/", r"/watch/", r"/story\.php", r"/video\.php", r"/events/", r"/share/v/", r"/share/p/", r"/share/r/"]},  # Added share patterns
+             "path_patterns": [r"/[\w\.]+/posts/", r"/watch/", r"/story\.php", r"/video\.php", r"/events/", r"/share/v/", r"/share/p/", r"/share/r/", r"/share/[\w]+/"]},  # Added share patterns including direct content ID format
             # LinkedIn
             {"platform": "linkedin", "domains": ["linkedin.com", "www.linkedin.com", "lnkd.in"],
              "path_patterns": [r"/posts/", r"/pulse/", r"/feed/update/", r"/in/"]},
