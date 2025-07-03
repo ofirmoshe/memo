@@ -260,44 +260,45 @@ async def perform_search(user_id: str, query: str, message) -> None:
                 await message.reply_text(f"🔍 No relevant results found for: {query}\n💡 Try using different keywords or be more specific.")
                 return
             
-            reply_text = f"🔍 Search Results for: {query}\n\n"
-            for i, result in enumerate(filtered_results, 1):
-                title = result.get('title', 'Untitled')
-                description = result.get('description', '')
-                tags = result.get('tags', [])
-                similarity = result.get('similarity_score', 0)
-                url = result.get('url', '')
-                media_type = result.get('media_type', 'url')
-                content_data = result.get('content_data', '')
-                item_id = result.get('id')
+            # Check if there are any non-text items to show in summary
+            non_text_results = [result for result in filtered_results if result.get('media_type') != 'text']
+            
+            if non_text_results:
+                reply_text = f"🔍 Search Results for: {query}\n\n"
+                for i, result in enumerate(filtered_results, 1):
+                    title = result.get('title', 'Untitled')
+                    description = result.get('description', '')
+                    tags = result.get('tags', [])
+                    similarity = result.get('similarity_score', 0)
+                    url = result.get('url', '')
+                    media_type = result.get('media_type', 'url')
+                    content_data = result.get('content_data', '')
+                    item_id = result.get('id')
 
-                result_text = f"{i}. {title}\n"
-                if media_type == 'text' and content_data:
-                    # For text notes, show full content without truncation
-                    result_text += f"📝 {content_data}\n"
-                elif description:
-                    desc_preview = description[:150] + "..." if len(description) > 150 else description
-                    result_text += f"📝 {desc_preview}\n"
-                if tags:
-                    result_text += f"🏷️ {', '.join(tags[:3])}\n"
-                if media_type == 'url' and url:
-                    result_text += f"🔗 {url}\n"
-                elif media_type == 'text':
-                    result_text += "📝 Text Note\n"
-                elif media_type == 'document':
-                    result_text += "📄 Document\n"
-                elif media_type == 'image':
-                    result_text += "🖼️ Image\n"
-                result_text += f"📊 Relevance: {similarity:.2f}\n"
+                    # Only show non-text items in the main results
+                    if media_type != 'text':
+                        result_text = f"{i}. {title}\n"
+                        if description:
+                            desc_preview = description[:150] + "..." if len(description) > 150 else description
+                            result_text += f"📝 {desc_preview}\n"
+                        if tags:
+                            result_text += f"🏷️ {', '.join(tags[:3])}\n"
+                        if media_type == 'url' and url:
+                            result_text += f"🔗 {url}\n"
+                        elif media_type == 'document':
+                            result_text += "📄 Document\n"
+                        elif media_type == 'image':
+                            result_text += "🖼️ Image\n"
+                        result_text += f"📊 Relevance: {similarity:.2f}\n"
 
-                # Inline delete button
-                if item_id:
-                    keyboard = InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🗑️ Delete", callback_data=f"delete:{item_id}")]
-                    ])
-                    await message.reply_text(result_text, reply_markup=keyboard)
-                else:
-                    await message.reply_text(result_text)
+                        # Inline delete button
+                        if item_id:
+                            keyboard = InlineKeyboardMarkup([
+                                [InlineKeyboardButton("🗑️ Delete", callback_data=f"delete:{item_id}")]
+                            ])
+                            await message.reply_text(result_text, reply_markup=keyboard)
+                        else:
+                            await message.reply_text(result_text)
 
             # Now send files for results that have them (images and documents)
             files_sent = 0
@@ -333,8 +334,6 @@ async def perform_search(user_id: str, query: str, message) -> None:
                     else:
                         break
             
-            if text_notes_sent > 0:
-                await message.reply_text(f"📋 Sent {text_notes_sent} text note(s) as copy-able messages!")
         else:
             await message.reply_text(f"❌ Search failed: {response.text}")
     except requests.exceptions.Timeout:
@@ -576,11 +575,6 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                     await message.reply_text(reply_text, reply_markup=keyboard)
                 else:
                     await message.reply_text(reply_text)
-                
-                # Send the full original text as a separate copy-able message
-                if original_text:
-                    copy_text = f"📋 **Saved Content (Copy-able):**\n\n{original_text}"
-                    await message.reply_text(copy_text, parse_mode='Markdown')
             else:
                 await message.reply_text(f"❌ Error saving content: {response.text}")
         except requests.exceptions.Timeout:
