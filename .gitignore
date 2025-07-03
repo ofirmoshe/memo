@@ -18,3 +18,4 @@ alembic/versions/*.py
 !start_railway.py
 !RAILWAY_DEPLOYMENT.md
 !railway.env.example
+*.pyc
