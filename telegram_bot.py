@@ -312,6 +312,29 @@ async def perform_search(user_id: str, query: str, message) -> None:
                         break
             if files_sent > 0:
                 await message.reply_text(f"📎 Sent {files_sent} file(s) from your search results!")
+            
+            # Send text notes as separate copy-able messages
+            text_notes_sent = 0
+            for i, result in enumerate(filtered_results, 1):
+                if result.get('media_type') == 'text' and result.get('content_data'):
+                    if text_notes_sent < 10:  # Limit to 10 text notes to avoid spam
+                        title = result.get('title', 'Text Note')
+                        content_data = result.get('content_data', '')
+                        tags = result.get('tags', [])
+                        
+                        # Send as a separate message for easy copying
+                        copy_text = f"📝 **{title}**\n\n{content_data}"
+                        if tags:
+                            copy_text += f"\n\n🏷️ Tags: {', '.join(tags[:3])}"
+                        
+                        await message.reply_text(copy_text, parse_mode='Markdown')
+                        text_notes_sent += 1
+                        await asyncio.sleep(0.3)  # Small delay between messages
+                    else:
+                        break
+            
+            if text_notes_sent > 0:
+                await message.reply_text(f"📋 Sent {text_notes_sent} text note(s) as copy-able messages!")
         else:
             await message.reply_text(f"❌ Search failed: {response.text}")
     except requests.exceptions.Timeout:
@@ -514,7 +537,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 f"{BACKEND_URL}/save-text",
                 json={
                     "user_id": user_id,
-                    "text_content": english_text,
+                    "text_content": text,  # Use original text instead of english_text
                     "user_context": None
                 },
                 timeout=15
@@ -534,9 +557,10 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 reply_text = "✅ Content Saved Successfully!\n\n"
                 reply_text += f"📌 Title: {title}\n"
                 
-                # Show original text content without truncation
+                # Show brief confirmation instead of full text
                 if original_text:
-                    reply_text += f"📝 Content: {original_text}\n"
+                    text_preview = original_text[:100] + "..." if len(original_text) > 100 else original_text
+                    reply_text += f"📝 Preview: {text_preview}\n"
                 else:
                     # Fallback to description if original text not available
                     if len(description) > 300:
@@ -552,6 +576,11 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                     await message.reply_text(reply_text, reply_markup=keyboard)
                 else:
                     await message.reply_text(reply_text)
+                
+                # Send the full original text as a separate copy-able message
+                if original_text:
+                    copy_text = f"📋 **Saved Content (Copy-able):**\n\n{original_text}"
+                    await message.reply_text(copy_text, parse_mode='Markdown')
             else:
                 await message.reply_text(f"❌ Error saving content: {response.text}")
         except requests.exceptions.Timeout:

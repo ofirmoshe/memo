@@ -15,7 +15,7 @@ from app.models.schemas import ExtractRequest, SearchRequest, MemoraItem, SaveTe
 from app.db.database import get_db, init_db, get_or_create_user, Item
 from app.utils.extractor import extract_and_save_content, extract_content_from_url
 from app.utils.search import search_content, get_all_items, get_all_tags, get_items_by_tag, delete_item, search_items
-from app.utils.llm import analyze_content_with_llm, generate_embedding, get_content_analysis_prompt, get_llm_response, get_text_analysis_prompt, get_file_analysis_prompt, analyze_image_with_llm
+from app.utils.llm import analyze_content_with_llm, generate_embedding, get_content_analysis_prompt, get_llm_response, get_text_analysis_prompt, get_file_analysis_prompt, analyze_image_with_llm, detect_intent_and_translate
 from app.utils.file_processor import FileProcessor
 import json
 
@@ -143,9 +143,17 @@ async def save_text(request: SaveTextRequest, db: Session = Depends(get_db)):
         # Get or create user
         user = get_or_create_user(db, request.user_id)
         
-        # Create prompt for text analysis
+        # Get English translation for LLM analysis
+        try:
+            llm_result = detect_intent_and_translate(request.text_content)
+            english_text = llm_result.get("english_text", request.text_content)
+        except Exception as e:
+            logger.warning(f"Translation failed, using original text: {str(e)}")
+            english_text = request.text_content
+        
+        # Create prompt for text analysis using English text
         prompt = get_text_analysis_prompt(
-            text_content=request.text_content,
+            text_content=english_text,
             user_context=request.user_context
         )
         
@@ -158,17 +166,17 @@ async def save_text(request: SaveTextRequest, db: Session = Depends(get_db)):
             # Fallback analysis
             analysis = {
                 "title": request.title or "Text Note",
-                "description": request.text_content[:500],
+                "description": english_text[:500],
                 "tags": ["personal_note"],
                 "content_type": "personal_note",
                 "platform": "personal"
             }
         
-        # Generate embedding for search
-        embedding_text = f"{analysis.get('title', '')} {analysis.get('description', '')} {request.user_context or ''}"
+        # Generate embedding for search using English text
+        embedding_text = f"{analysis.get('title', '')} {analysis.get('description', '')} {english_text} {request.user_context or ''}"
         embedding = generate_embedding(embedding_text)
         
-        # Create and save item
+        # Create and save item - store ORIGINAL text content
         item = Item(
             user_id=request.user_id,
             title=analysis.get("title"),
@@ -178,7 +186,7 @@ async def save_text(request: SaveTextRequest, db: Session = Depends(get_db)):
             content_type=analysis.get("content_type"),
             platform=analysis.get("platform"),
             media_type="text",
-            content_data=request.text_content,
+            content_data=request.text_content,  # Store original text
             user_context=request.user_context
         )
         
@@ -196,7 +204,7 @@ async def save_text(request: SaveTextRequest, db: Session = Depends(get_db)):
             "content_type": item.content_type,
             "platform": item.platform,
             "media_type": item.media_type,
-            "original_text": request.text_content
+            "original_text": request.text_content  # Return original text
         }
         
     except Exception as e:
