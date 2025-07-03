@@ -1,0 +1,14 @@
+[build]
+builder = "dockerfile"
+
+[deploy]
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+[env]
+USER_PROFILES_ENABLED = "true"
+PYTHONPATH = "/app"
+
+[healthcheck]
+httpPath = "/health"
+httpTimeout = 30 

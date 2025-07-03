@@ -30,6 +30,7 @@ ENV PORT=8001
 
 # Set environment variables
 ENV PYTHONPATH=/app
+ENV USER_PROFILES_ENABLED=true
 
 # Default command (can be overridden in docker-compose)
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"] 

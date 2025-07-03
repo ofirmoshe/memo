@@ -19,6 +19,14 @@ from app.utils.llm import analyze_content_with_llm, generate_embedding, get_cont
 from app.utils.file_processor import FileProcessor
 import json
 
+# User Profile imports
+try:
+    from app.api.user_profile import router as user_profile_router
+    USER_PROFILES_AVAILABLE = True
+except ImportError:
+    logger.warning("User profile system not available - continuing without it")
+    USER_PROFILES_AVAILABLE = False
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -42,11 +50,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include user profile router if available
+if USER_PROFILES_AVAILABLE:
+    app.include_router(user_profile_router)
+    logger.info("User profile API endpoints enabled")
+
 # Initialize database on startup
 @app.on_event("startup")
 async def startup_event():
     init_db()
     logger.info("Database initialized")
+    
+    # Auto-migrate user profiles for Railway deployment
+    if USER_PROFILES_AVAILABLE and os.getenv("DATABASE_URL"):
+        try:
+            from app.db.migrations.add_user_profiles import check_migration_needed, run_migration
+            from app.db.database import engine
+            
+            if check_migration_needed(engine):
+                logger.info("Running user profile migration for Railway deployment...")
+                success = run_migration(engine, "apply")
+                if success:
+                    logger.info("✅ User profile migration completed successfully")
+                else:
+                    logger.error("❌ User profile migration failed")
+            else:
+                logger.info("User profile tables already exist")
+        except Exception as e:
+            logger.warning(f"User profile migration skipped: {e}")
+            logger.info("Continuing without user profiles")
 
 # Initialize file processor
 file_processor = FileProcessor()

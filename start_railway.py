@@ -43,8 +43,14 @@ def start_telegram_bot():
         # Wait a bit for the backend to start
         time.sleep(10)
         
-        # Import and run the telegram bot
-        from telegram_bot import main as telegram_main
+        # Import and run the enhanced telegram bot with user profiles
+        try:
+            from telegram_bot_enhanced import main as telegram_main
+            logger.info("Using enhanced Telegram bot with user profiles")
+        except ImportError:
+            logger.warning("Enhanced bot not available, falling back to basic bot")
+            from telegram_bot import main as telegram_main
+        
         telegram_main()
     except Exception as e:
         logger.error(f"❌ Failed to start Telegram bot: {e}")

@@ -1,214 +1,321 @@
-# Railway Deployment Guide for Memora
+# Railway Deployment Guide for Memora with User Profiles
 
-This guide will help you deploy Memora to Railway while keeping it compatible with local development.
+This guide covers deploying Memora to Railway with the complete user profile system.
 
-## Prerequisites
+## Features Included in Railway Deployment
 
-1. **GitHub Repository**: Your code should be pushed to GitHub
-2. **Railway Account**: Sign up at [railway.app](https://railway.app)
-3. **Environment Variables**: You'll need your OpenAI API key and Telegram bot token
+### ✅ Core Memora Features
+- AI-powered content extraction and analysis
+- Multi-format file support (PDFs, Word docs, images)
+- Semantic search with embeddings
+- Telegram bot integration
+- RESTful API endpoints
 
-## Step-by-Step Deployment
+### ✅ Enhanced User Profile System
+- **Multi-provider authentication** (Telegram, Google, Apple ready)
+- **Rich user profiles** with preferences and settings
+- **Activity tracking** and analytics
+- **Usage statistics** and insights
+- **Auto-migration** on Railway deployment
+- **Backward compatibility** with existing data
 
-### 1. Prepare Your Repository
+## Quick Deploy to Railway
 
-Your repository is already configured for Railway deployment with:
-- ✅ `railway.json` - Railway configuration
-- ✅ `start_railway.py` - Railway-specific startup script
-- ✅ `Dockerfile` - Updated for Railway compatibility
-- ✅ Dynamic backend URL detection in `telegram_bot.py`
-- ✅ Automatic database initialization (no manual migration needed)
+### Option 1: Deploy Button (Recommended)
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/memora-with-profiles)
 
-### 2. Deploy to Railway
+### Option 2: Manual Deployment
 
-1. **Go to [railway.app](https://railway.app) and sign in**
+1. **Fork this repository** to your GitHub account
 
-2. **Create a new project:**
-   - Click "New Project"
+2. **Connect to Railway:**
+   - Visit [Railway.app](https://railway.app)
+   - Click "Start a New Project"
    - Select "Deploy from GitHub repo"
-   - Choose your Memora repository
+   - Choose your forked repository
 
-3. **Add PostgreSQL Database:**
-   - In your Railway project dashboard
-   - Click "New Service" → "Database" → "PostgreSQL"
-   - Railway will automatically create the database and set `DATABASE_URL`
-
-4. **Configure Environment Variables:**
-   - Go to your main service (not the database)
-   - Click on "Variables" tab
-   - Add these environment variables:
-
+3. **Add Environment Variables:**
    ```
-   OPENAI_API_KEY=sk-your-actual-openai-api-key-here
-   TELEGRAM_BOT_TOKEN=your-actual-telegram-bot-token-here
+   # Required
+   TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+   OPENAI_API_KEY=your_openai_api_key_here
+   
+   # Optional (defaults provided)
+   USER_PROFILES_ENABLED=true
+   PYTHONPATH=/app
    ```
 
-   **Note**: Railway automatically provides:
-   - `DATABASE_URL` (from PostgreSQL service)
-   - `PORT` (assigned by Railway)
-   - `RAILWAY_ENVIRONMENT=production`
+4. **Deploy:**
+   - Railway will automatically detect the Dockerfile
+   - First deployment takes 3-5 minutes
+   - User profile tables are auto-created on first run
 
-5. **Add Railway Volume (Optional for file storage):**
-   - If you need persistent file storage beyond the database
-   - Go to your main service settings
-   - Click "Volumes" tab
-   - Add a volume with mount path `/app/data`
-   - This provides persistent storage for uploaded files
+## Environment Variables
 
-### 3. Deploy and Monitor
+### Required Variables
+- `TELEGRAM_BOT_TOKEN`: Get from [@BotFather](https://t.me/botfather)
+- `OPENAI_API_KEY`: Get from [OpenAI Dashboard](https://platform.openai.com/api-keys)
 
-1. **Automatic Deployment:**
-   - Railway will automatically build and deploy your app
-   - The database tables will be created automatically on first startup
-   - No manual migration needed - everything is handled automatically
+### Railway Auto-Provided
+- `DATABASE_URL`: PostgreSQL connection string (auto-generated)
+- `PORT`: Application port (auto-assigned)
+- `RAILWAY_ENVIRONMENT`: Deployment environment flag
 
-2. **Check Deployment:**
-   - Once deployed, you'll get a URL like `https://your-app-name.railway.app`
-   - Visit `https://your-app-name.railway.app/health` to verify the API is running
-   - Use `https://your-app-name.railway.app/health/detailed` for detailed system info
+### Optional Configuration
+```env
+# User Profile System
+USER_PROFILES_ENABLED=true          # Enable user profiles (default: true)
 
-3. **Test Telegram Bot:**
-   - Your Telegram bot should now be running on Railway
-   - Send a message to your bot to test functionality
+# Application Settings
+PYTHONPATH=/app                      # Python module path
+LOG_LEVEL=INFO                       # Logging verbosity
 
-## Persistent Storage on Railway
-
-### Database Storage
-- All user data, content, and metadata are stored in the PostgreSQL database
-- Railway's managed PostgreSQL provides automatic backups and persistence
-
-### File Storage (Optional)
-- For uploaded files (images, documents), you can add a Railway volume:
-  1. Go to your service settings in Railway dashboard
-  2. Navigate to "Volumes" tab  
-  3. Add volume with mount path: `/app/data`
-  4. This creates persistent storage that survives deployments
-
-### Alternative: Cloud Storage
-- For production, consider using cloud storage (AWS S3, Google Cloud Storage)
-- More scalable than local file storage
-- Can be integrated by updating file upload endpoints
-
-## Environment Variable Details
-
-### Required Variables (Set these in Railway)
-- `OPENAI_API_KEY`: Your OpenAI API key for content analysis
-- `TELEGRAM_BOT_TOKEN`: Your Telegram bot token from @BotFather
-
-### Automatically Set by Railway
-- `DATABASE_URL`: PostgreSQL connection string
-- `PORT`: Port number assigned by Railway
-- `RAILWAY_ENVIRONMENT`: Set to "production"
-
-### Optional Variables
-- `BACKEND_URL`: Override if needed (usually not required)
-
-## Local Development Compatibility
-
-Your local development setup remains unchanged:
-
-### Using Docker Compose (Recommended for local)
-```bash
-# This still works exactly as before
-docker-compose up -d
+# File Processing
+MAX_FILE_SIZE=50                     # Maximum file size in MB
+EMBEDDING_DIMENSION=1536             # OpenAI embedding dimension
 ```
 
-### Using Python directly
-```bash
-# Backend
-python -m app.main
+## Database Configuration
 
-# Telegram bot (in another terminal)
-python telegram_bot.py
+### PostgreSQL Service
+Railway automatically provides:
+- ✅ **PostgreSQL 14+** with persistent storage
+- ✅ **Automatic backups** and point-in-time recovery
+- ✅ **Connection pooling** for performance
+- ✅ **SSL encryption** for security
+
+### User Profile Tables
+Automatically created on first deployment:
+- `user_profiles` - Extended user information and preferences
+- `user_auth_providers` - Multi-platform authentication tracking
+- `user_activity` - Activity logs and analytics
+
+### Migration Process
+```
+1. Railway starts the container
+2. FastAPI app initializes
+3. Database connection established
+4. Auto-migration checks for user profile tables
+5. Tables created if not present (safe operation)
+6. App ready to receive requests
 ```
 
-## How the Environment Detection Works
+## Deployment Process
 
-The app automatically detects the environment:
+### Automatic Deployment Pipeline
+```
+1. Push to GitHub → Railway detects changes
+2. Build Docker image with all dependencies
+3. Deploy with zero-downtime rolling update
+4. Run database migrations if needed
+5. Start FastAPI server and Telegram bot
+6. Health checks confirm deployment success
+```
 
-1. **Railway**: Detects `RAILWAY_ENVIRONMENT` → uses localhost communication
-2. **Docker Compose**: Detects PostgreSQL in `DATABASE_URL` → uses service names
-3. **Local Development**: Falls back to localhost
+### Build Optimization
+- **Multi-stage Docker build** for smaller images
+- **Dependency caching** for faster rebuilds
+- **Production-optimized** Python environment
+
+## API Endpoints
+
+### Core Memora API
+```
+POST   /extract          # Extract content from URLs
+POST   /save-text        # Save text content
+POST   /save-file        # Save file content
+POST   /search           # Semantic search
+GET    /user/{id}/stats  # User statistics
+GET    /health           # Health check
+```
+
+### User Profile API (New!)
+```
+# Profile Management
+GET    /api/profiles/{user_id}           # Get user profile
+POST   /api/profiles/                    # Create profile
+PUT    /api/profiles/{user_id}           # Update profile
+DELETE /api/profiles/{user_id}           # Delete profile
+
+# Provider-Specific Creation
+POST   /api/profiles/telegram            # Create from Telegram data
+POST   /api/profiles/google              # Create from Google data
+POST   /api/profiles/apple               # Create from Apple data
+
+# Activity & Analytics
+POST   /api/profiles/{user_id}/activity  # Track user activity
+GET    /api/profiles/{user_id}/stats     # Get user statistics
+GET    /api/profiles/{user_id}/summary   # Get profile summary
+
+# Batch Operations
+POST   /api/profiles/batch               # Batch operations
+GET    /api/profiles/search              # Search profiles
+```
+
+## Telegram Bot Features
+
+### Enhanced Commands
+```
+/start    - Welcome message with profile setup
+/search   - Explicit search command
+/stats    - Enhanced statistics with profile data
+/profile  - View personal profile information (NEW!)
+```
+
+### Smart Message Processing
+- **Intent detection** - Automatically understands save vs search
+- **Multi-language support** - Translates and processes various languages
+- **Activity tracking** - Records all interactions for analytics
+- **Profile integration** - Personalizes responses based on user data
+
+## Monitoring & Analytics
+
+### Built-in Health Checks
+- `GET /health` - Basic health status
+- `GET /health/detailed` - Comprehensive system status including:
+  - Database connectivity
+  - User profile system status
+  - Memory and CPU usage
+  - Active user statistics
+
+### User Analytics
+Access via the user profile API:
+- **Usage patterns** - When and how users interact
+- **Content preferences** - What types of content users save most
+- **Search behavior** - Query patterns and success rates
+- **Engagement metrics** - Daily/weekly/monthly active users
+
+## Security Features
+
+### Data Protection
+- ✅ **Encrypted connections** (HTTPS/WSS)
+- ✅ **Environment variable security** (secrets not in code)
+- ✅ **Database encryption** at rest
+- ✅ **User data isolation** (strict user_id filtering)
+
+### Authentication Security
+- ✅ **Multi-provider support** (Telegram, Google, Apple)
+- ✅ **Provider verification** (validates tokens/signatures)
+- ✅ **Session management** (tracks authentication state)
+- ✅ **Privacy controls** (user-configurable privacy settings)
+
+## Scaling & Performance
+
+### Railway Scaling
+- **Automatic scaling** based on traffic
+- **Load balancing** across multiple instances
+- **Regional deployment** for low latency
+- **CDN integration** for static assets
+
+### Database Optimization
+- **Indexed queries** for fast user lookups
+- **Connection pooling** for concurrent users
+- **Query optimization** for large datasets
+- **JSON columns** for flexible data storage
 
 ## Troubleshooting
 
-### Build Issues
-- Check Railway build logs for errors
-- Ensure all required files are committed to GitHub
-- Verify Dockerfile doesn't use banned keywords (like `VOLUME`)
+### Common Issues
 
-### Database Issues
-- Verify PostgreSQL service is running in Railway
-- Check that `DATABASE_URL` is automatically set
-- Database tables are created automatically - no manual migration needed
-- If you see migration loops, ensure `railway.json` doesn't include migration commands
+#### Migration Problems
+```bash
+# Check migration status
+curl https://your-app.railway.app/health/detailed
 
-### Health Check Issues
-- Visit `/health` endpoint to verify basic service health
-- Use `/health/detailed` for comprehensive system diagnostics
-- Health check timeout is set to 100 seconds to allow for startup
-- If health checks fail, check Railway service logs for startup errors
-
-### Bot Not Responding
-- Verify `TELEGRAM_BOT_TOKEN` is correct
-- Check Railway service logs for errors
-- Ensure both backend and bot processes are running
-- Bot waits 10 seconds for backend to start - check logs for timing issues
-
-### Environment Variable Issues
-- Double-check variable names (case-sensitive)
-- Ensure no extra spaces in values
-- Verify OpenAI API key is valid
-- `DATABASE_URL` is automatically provided by Railway PostgreSQL service
-
-### Service Startup Issues
-- Check Railway logs for detailed error messages
-- Verify all required environment variables are set
-- Ensure no migration commands are running in loops
-- Database initialization happens automatically via FastAPI startup event
-
-## Scaling and Costs
-
-### Free Tier
-- Railway provides $5/month in credits
-- Should cover development and testing
-
-### Production Scaling
-- Railway automatically scales based on usage
-- Pay-as-you-grow pricing
-- Monitor usage in Railway dashboard
-
-## Updating Your Deployment
-
-1. **Push changes to GitHub**
-2. **Railway automatically redeploys**
-3. **Monitor deployment in Railway dashboard**
-
-## Support
-
-If you encounter issues:
-1. Check Railway documentation: [docs.railway.app](https://docs.railway.app)
-2. Review Railway service logs
-3. Verify environment variables are set correctly
-
-## Architecture on Railway
-
-```
-┌─────────────────────────────────────┐
-│           Railway Service           │
-├─────────────────────────────────────┤
-│  ┌─────────────┐ ┌───────────────┐  │
-│  │   FastAPI   │ │ Telegram Bot  │  │
-│  │   Backend   │ │               │  │
-│  │   :8080     │ │               │  │
-│  └─────────────┘ └───────────────┘  │
-└─────────────────────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────┐
-│        PostgreSQL Database         │
-│         (Railway Service)          │
-└─────────────────────────────────────┘
+# Look for:
+"user_profiles_available": true
+"migration_status": "completed"
 ```
 
-Both the FastAPI backend and Telegram bot run in the same container, communicating via localhost, while connecting to the managed PostgreSQL database. 
+#### Bot Connection Issues
+```bash
+# Check bot status in Railway logs
+# Look for: "Starting enhanced Telegram bot with user profiles..."
+
+# Verify environment variables
+TELEGRAM_BOT_TOKEN=7918946951:AAG... ✓
+DATABASE_URL=postgresql://... ✓
+```
+
+#### Database Connection Problems
+```bash
+# Railway provides DATABASE_URL automatically
+# Check Railway dashboard > Variables tab
+# Ensure DATABASE_URL is present and valid
+```
+
+### Debug Mode
+Enable detailed logging:
+```env
+LOG_LEVEL=DEBUG
+```
+
+### Health Check Endpoints
+```bash
+# Basic health
+curl https://your-app.railway.app/health
+
+# Detailed system info
+curl https://your-app.railway.app/health/detailed
+
+# Profile system status
+curl https://your-app.railway.app/api/profiles/health
+```
+
+## Migration from Basic Memora
+
+### Automatic Migration
+If you're upgrading from basic Memora:
+1. **No data loss** - All existing users and content preserved
+2. **Auto-profile creation** - Profiles created for existing users on first interaction
+3. **Backward compatibility** - All existing API endpoints continue working
+4. **Gradual enhancement** - New features available immediately
+
+### Manual Migration Check
+```bash
+# Check if migration is needed
+curl https://your-app.railway.app/health/detailed
+
+# Look for migration status in response
+```
+
+## Cost Optimization
+
+### Railway Pricing Tiers
+- **Hobby Plan**: $5/month - Perfect for personal use
+- **Pro Plan**: $20/month - Ideal for teams and higher usage
+- **Team Plan**: $20/month + usage - Best for production deployments
+
+### Resource Optimization
+- **Efficient Docker image** (~500MB compressed)
+- **Smart dependency management** (only required packages)
+- **Database connection pooling** (prevents connection exhaustion)
+- **Async processing** (handles concurrent requests efficiently)
+
+## Support & Updates
+
+### Getting Help
+1. **Check Railway logs** for error messages
+2. **Use health endpoints** to diagnose issues
+3. **Review environment variables** for missing configuration
+4. **Check GitHub issues** for known problems
+
+### Staying Updated
+- **Auto-deployment** from GitHub when you push changes
+- **Database migrations** run automatically
+- **Backward compatibility** maintained across updates
+- **Feature flags** for gradual rollouts
+
+---
+
+## Quick Links
+
+- 🚀 **[Deploy to Railway](https://railway.app/template/memora-with-profiles)**
+- 📚 **[API Documentation](USER_PROFILE_README.md)**
+- 🤖 **[Telegram Bot Setup](https://t.me/botfather)**
+- 🔑 **[OpenAI API Keys](https://platform.openai.com/api-keys)**
+- 📊 **[Railway Dashboard](https://railway.app/dashboard)**
+
+---
+
+*Last updated: January 2025 - Memora with Enhanced User Profiles* 
