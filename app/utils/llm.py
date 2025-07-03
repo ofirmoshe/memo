@@ -245,6 +245,43 @@ def analyze_content_with_llm(content: Dict[str, str]) -> Dict[str, Any]:
             "tags": tags[:7]  # Limit to 7 tags
         }
     
+    # For Instagram fallback extractions, provide a simpler, more honest description
+    if is_fallback and platform == "instagram":
+        title = content.get("title", "Instagram Content")
+        content_type = content.get("raw_metadata", {}).get("content_type", "Instagram Content")
+        content_id = content.get("raw_metadata", {}).get("content_id", "")
+        username = content.get("raw_metadata", {}).get("username", "")
+        
+        # Create a straightforward description
+        if "Reel" in content_type:
+            description = f"Instagram Reel (short vertical video) that requires direct access to view. {extraction_note}"
+            tags = ["Instagram", "reel", "video", "social-media", "requires-access"]
+        elif "Post" in content_type:
+            description = f"Instagram post content that requires direct access to view. {extraction_note}"
+            tags = ["Instagram", "post", "social-media", "requires-access"]
+        elif "IGTV" in content_type or "TV" in content_type:
+            description = f"Instagram TV (long-form video) that requires direct access to view. {extraction_note}"
+            tags = ["Instagram", "IGTV", "video", "social-media", "requires-access"]
+        elif "Story" in content_type:
+            description = f"Instagram Story content that requires direct access to view. {extraction_note}"
+            tags = ["Instagram", "story", "social-media", "temporary", "requires-access"]
+        else:
+            description = f"Instagram content that requires direct access to view. {extraction_note}"
+            tags = ["Instagram", "social-media", "requires-access"]
+        
+        # Add username to tags if available
+        if username:
+            tags.append(f"@{username}")
+        
+        # Add content ID to tags if available
+        if content_id:
+            tags.append(f"id-{content_id}")
+        
+        return {
+            "description": description,
+            "tags": tags[:7]  # Limit to 7 tags
+        }
+    
     # Prepare content for analysis
     title = content.get("title", "")
     text = content.get("text", "")

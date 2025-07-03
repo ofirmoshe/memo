@@ -85,8 +85,8 @@ def scrape_social_media(url: str) -> Dict[str, Any]:
             if platform == "Facebook":
                 logger.info("Facebook URL detected - using alternative extraction methods to avoid connection issues")
                 
-                # Add initial delay to avoid rate limiting
-                time.sleep(random.uniform(5, 10))
+                # Add minimal delay to avoid rate limiting
+                time.sleep(random.uniform(1, 2))
                 
                 # Try enhanced Facebook extraction with better connection handling
                 result = extract_facebook_content_robust(url)
@@ -99,6 +99,58 @@ def scrape_social_media(url: str) -> Dict[str, Any]:
                 if result:
                     result["success"] = True
                     return result
+            elif platform == "Instagram":
+                logger.info("Instagram URL detected - using enhanced extraction methods for better reliability")
+                
+                # Add initial delay to avoid rate limiting
+                time.sleep(random.uniform(3, 8))
+                
+                # Try enhanced Instagram extraction with better connection handling
+                result = extract_instagram_content_robust(url)
+                if result:
+                    result["success"] = True
+                    return result
+                
+                # If that fails, try yt-dlp as backup
+                try:
+                    # Clean up temp directory
+                    for f in os.listdir(temp_dir):
+                        if f.endswith('.info.json'):
+                            os.remove(os.path.join(temp_dir, f))
+                    
+                    instagram_cmd = [
+                        "yt-dlp",
+                        "--skip-download",
+                        "--write-info-json",
+                        "--no-warnings",
+                        "--ignore-errors",
+                        "--socket-timeout", "20",
+                        "--retries", "2",
+                        "--add-header", "User-Agent:Mozilla/5.0 (iPhone; CPU iPhone OS 15_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
+                        "-o", f"{temp_dir}/%(id)s",
+                        url
+                    ]
+                    
+                    logger.info(f"Trying yt-dlp as backup for Instagram")
+                    process = subprocess.run(instagram_cmd, capture_output=True, text=True, timeout=45)
+                    
+                    if process.returncode == 0:
+                        json_files = [f for f in os.listdir(temp_dir) if f.endswith('.info.json')]
+                        if json_files:
+                            with open(os.path.join(temp_dir, json_files[0]), 'r', encoding='utf-8') as f:
+                                metadata = json.load(f)
+                            success = True
+                            logger.info("Successfully extracted Instagram content with yt-dlp backup")
+                        
+                except Exception as e:
+                    logger.warning(f"Instagram yt-dlp backup failed: {str(e)}")
+                
+                # If both methods failed, use URL-based extraction as final fallback
+                if not success:
+                    result = extract_instagram_info_from_url(url)
+                    if result:
+                        result["success"] = True
+                        return result
             else:
                 # For non-Facebook platforms, try yt-dlp with reduced attempts
                 # Add a random delay before starting to avoid rate limiting
@@ -267,8 +319,8 @@ def extract_facebook_content_robust(url: str) -> Dict[str, Any]:
     try:
         logger.info(f"Attempting robust Facebook extraction for: {url}")
         
-        # First, try a much longer delay to avoid connection pool exhaustion
-        delay = random.uniform(10, 20)
+        # Minimal delay to avoid rate limiting while keeping response time reasonable
+        delay = random.uniform(1, 2)
         logger.info(f"Waiting {delay:.1f} seconds before attempting Facebook extraction...")
         time.sleep(delay)
         
@@ -293,7 +345,7 @@ def extract_facebook_content_robust(url: str) -> Dict[str, Any]:
             session.headers.update(headers)
             
             logger.info(f"Attempting mobile Facebook extraction: {mobile_url}")
-            response = session.get(mobile_url, timeout=30)
+            response = session.get(mobile_url, timeout=15)
             
             if response.status_code == 200:
                 from bs4 import BeautifulSoup
@@ -382,8 +434,8 @@ def extract_facebook_content_robust(url: str) -> Dict[str, Any]:
         finally:
             session.close()
         
-        # Add delay before next attempt
-        time.sleep(random.uniform(5, 10))
+        # Quick transition to next attempt
+        time.sleep(random.uniform(0.5, 1.5))
         
         # If mobile extraction failed, try a different approach - desktop with different headers
         try:
@@ -404,7 +456,7 @@ def extract_facebook_content_robust(url: str) -> Dict[str, Any]:
             session.headers.update(desktop_headers)
             
             logger.info(f"Attempting desktop Facebook extraction: {url}")
-            response = session.get(url, timeout=30)
+            response = session.get(url, timeout=15)
             
             if response.status_code == 200:
                 from bs4 import BeautifulSoup
@@ -1091,4 +1143,302 @@ def try_alternative_extraction(url: str, platform: str) -> Dict[str, Any]:
         
     except Exception as e:
         logger.warning(f"Alternative extraction failed: {str(e)}")
+        return None
+
+def extract_instagram_content_robust(url: str) -> Dict[str, Any]:
+    """
+    Robust Instagram content extraction with proper connection handling.
+    
+    Args:
+        url: Instagram URL to extract content from
+        
+    Returns:
+        Dictionary with extracted content or None if failed
+    """
+    try:
+        logger.info(f"Attempting robust Instagram extraction for: {url}")
+        
+        # Add delay to avoid rate limiting
+        delay = random.uniform(5, 12)
+        logger.info(f"Waiting {delay:.1f} seconds before attempting Instagram extraction...")
+        time.sleep(delay)
+        
+        # Create a robust session
+        session = create_robust_session()
+        
+        # Instagram requires specific headers to avoid blocks
+        instagram_headers = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate",
+            "Connection": "close",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+        }
+        
+        session.headers.update(instagram_headers)
+        
+        # Try multiple Instagram extraction approaches
+        attempts = [
+            {"url": url, "method": "direct"},
+            {"url": url.replace("/?igsh=", "/?utm_source=ig_web_copy_link&"), "method": "clean_params"},
+            {"url": url.split("?")[0], "method": "no_params"}
+        ]
+        
+        for attempt_num, attempt in enumerate(attempts, 1):
+            try:
+                logger.info(f"Instagram extraction attempt {attempt_num}: {attempt['method']} - {attempt['url']}")
+                
+                response = session.get(attempt["url"], timeout=30)
+                
+                if response.status_code == 200:
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup(response.content, 'html.parser')
+                    
+                    # Try to extract meaningful content
+                    title = ""
+                    description = ""
+                    author = ""
+                    
+                    # Look for Open Graph meta tags first
+                    og_title = soup.find('meta', property='og:title')
+                    if og_title and og_title.get('content'):
+                        title = og_title.get('content', '').strip()
+                    
+                    og_description = soup.find('meta', property='og:description')
+                    if og_description and og_description.get('content'):
+                        description = og_description.get('content', '').strip()
+                    
+                    # Try to get author info
+                    og_site = soup.find('meta', property='og:site_name')
+                    if og_site and og_site.get('content'):
+                        author = og_site.get('content', '').strip()
+                    
+                    # Try alternative selectors for author
+                    if not author:
+                        author_meta = soup.find('meta', property='og:url')
+                        if author_meta and author_meta.get('content'):
+                            author_url = author_meta.get('content', '')
+                            if '/p/' in author_url or '/reel/' in author_url:
+                                # Extract username from URL
+                                parts = author_url.split('/')
+                                for i, part in enumerate(parts):
+                                    if part in ['p', 'reel'] and i > 0:
+                                        author = parts[i-1]
+                                        break
+                    
+                    # Look for JSON-LD structured data which Instagram sometimes uses
+                    json_scripts = soup.find_all('script', type='application/ld+json')
+                    for script in json_scripts:
+                        try:
+                            json_data = json.loads(script.string)
+                            if isinstance(json_data, dict):
+                                if 'name' in json_data and not title:
+                                    title = json_data['name']
+                                if 'description' in json_data and not description:
+                                    description = json_data['description']
+                                if 'author' in json_data and not author:
+                                    if isinstance(json_data['author'], dict):
+                                        author = json_data['author'].get('name', '')
+                                    else:
+                                        author = str(json_data['author'])
+                        except (json.JSONDecodeError, KeyError):
+                            continue
+                    
+                    # Try to extract content from Instagram-specific selectors
+                    if not description or len(description) < 20:
+                        content_selectors = [
+                            'meta[name="description"]',
+                            'meta[property="twitter:description"]',
+                            '.Caption'
+                        ]
+                        
+                        for selector in content_selectors:
+                            element = soup.select_one(selector)
+                            if element:
+                                if element.name == 'meta':
+                                    extracted_text = element.get('content', '')
+                                else:
+                                    extracted_text = element.get_text(strip=True)
+                                
+                                if extracted_text and len(extracted_text) > len(description):
+                                    description = extracted_text
+                                    break
+                    
+                    # Get thumbnail if available
+                    thumbnails = []
+                    og_image = soup.find('meta', property='og:image')
+                    if og_image and og_image.get('content'):
+                        thumbnails.append(og_image.get('content'))
+                    
+                    # Check if we got meaningful content
+                    if title and title not in ["Instagram", "Instagram - Discover what's happening", ""] and len(title) > 3:
+                        # Create detailed response
+                        text = f"Title: {title}\n"
+                        if author:
+                            text += f"Creator: {author}\n"
+                        if description and description != title:
+                            text += f"Description: {description}\n"
+                        text += f"Source: Instagram\n"
+                        
+                        session.close()
+                        
+                        return {
+                            "title": title,
+                            "text": text,
+                            "description": description,
+                            "meta_description": description,
+                            "uploader": author,
+                            "uploader_url": f"https://www.instagram.com/{author}" if author else "",
+                            "creator": author,
+                            "images": thumbnails,
+                            "url": url,
+                            "platform": "Instagram",
+                            "duration": None,
+                            "view_count": None,
+                            "like_count": None,
+                            "raw_metadata": {
+                                "extraction_method": f"web_scraping_{attempt['method']}",
+                                "attempt_url": attempt["url"]
+                            }
+                        }
+                    else:
+                        logger.warning(f"Instagram attempt {attempt_num} - No meaningful content. Title: '{title}'")
+                else:
+                    logger.warning(f"Instagram attempt {attempt_num} failed with status: {response.status_code}")
+                
+                # Add delay between attempts
+                if attempt_num < len(attempts):
+                    time.sleep(random.uniform(3, 6))
+                    
+            except Exception as attempt_error:
+                logger.warning(f"Instagram extraction attempt {attempt_num} failed: {str(attempt_error)}")
+                if attempt_num < len(attempts):
+                    time.sleep(random.uniform(3, 6))
+        
+        session.close()
+        return None
+        
+    except Exception as e:
+        logger.error(f"Robust Instagram extraction failed: {str(e)}")
+        return None
+
+def extract_instagram_info_from_url(url: str) -> Dict[str, Any]:
+    """
+    Extract basic information from Instagram URL structure when network methods fail.
+    
+    Args:
+        url: Instagram URL
+        
+    Returns:
+        Dictionary with basic extracted info or None
+    """
+    try:
+        logger.info(f"Trying URL-based Instagram info extraction for: {url}")
+        
+        # Parse different Instagram URL patterns
+        content_type = ""
+        content_description = ""
+        content_id = ""
+        username = ""
+        
+        # Extract components from URL
+        if "/reel/" in url:
+            content_type = "Instagram Reel"
+            content_description = "Short-form vertical video content on Instagram - unable to extract specific details due to platform restrictions."
+            # Extract reel ID
+            reel_match = re.search(r'/reel/([A-Za-z0-9_-]+)', url)
+            if reel_match:
+                content_id = reel_match.group(1)
+        elif "/p/" in url:
+            content_type = "Instagram Post"
+            content_description = "Instagram post containing images, video, or carousel content - unable to extract specific details due to platform restrictions."
+            # Extract post ID
+            post_match = re.search(r'/p/([A-Za-z0-9_-]+)', url)
+            if post_match:
+                content_id = post_match.group(1)
+        elif "/tv/" in url:
+            content_type = "Instagram TV (IGTV)"
+            content_description = "Long-form video content on Instagram TV - unable to extract specific details due to platform restrictions."
+            # Extract IGTV ID
+            tv_match = re.search(r'/tv/([A-Za-z0-9_-]+)', url)
+            if tv_match:
+                content_id = tv_match.group(1)
+        elif "/stories/" in url:
+            content_type = "Instagram Story"
+            content_description = "Temporary Instagram story content - unable to extract specific details due to platform restrictions."
+        else:
+            content_type = "Instagram Content"
+            content_description = "Instagram content - unable to extract specific details due to platform restrictions."
+        
+        # Try to extract username from URL
+        username_match = re.search(r'instagram\.com/([a-zA-Z0-9_.]+)/', url)
+        if username_match:
+            potential_username = username_match.group(1)
+            # Filter out non-username parts
+            if potential_username not in ['p', 'reel', 'tv', 'stories', 'explore', 'accounts']:
+                username = potential_username
+        
+        # Create title based on content type and available info
+        if content_id and username:
+            title = f"{content_type} by @{username} (ID: {content_id})"
+        elif content_id:
+            title = f"{content_type} (ID: {content_id})"
+        elif username:
+            title = f"{content_type} by @{username}"
+        else:
+            title = content_type
+        
+        # Create comprehensive description
+        full_description = content_description
+        if username:
+            full_description += f" Posted by @{username}."
+        
+        # Add helpful note
+        helpful_note = "Note: Instagram restricts automated content extraction. To view the actual content, please click the link to open in Instagram."
+        
+        # Create detailed text
+        text = f"Title: {title}\n"
+        text += f"Content Type: {content_type}\n"
+        text += f"Description: {full_description}\n"
+        if content_id:
+            text += f"Content ID: {content_id}\n"
+        if username:
+            text += f"Creator: @{username}\n"
+        text += f"Platform: Instagram\n"
+        text += f"URL: {url}\n"
+        text += f"{helpful_note}\n"
+        
+        return {
+            "title": title,
+            "text": text,
+            "description": full_description,
+            "meta_description": full_description,
+            "uploader": username,
+            "uploader_url": f"https://www.instagram.com/{username}/" if username else "",
+            "creator": username,
+            "images": [],
+            "url": url,
+            "platform": "Instagram",
+            "duration": None,
+            "view_count": None,
+            "like_count": None,
+            "is_fallback_extraction": True,  # Flag to indicate this is a fallback
+            "extraction_note": helpful_note,
+            "raw_metadata": {
+                "extraction_method": "url_pattern_analysis",
+                "content_type": content_type,
+                "content_id": content_id,
+                "username": username,
+                "note": "Instagram content extraction limited due to platform restrictions"
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in Instagram URL analysis: {str(e)}")
         return None
