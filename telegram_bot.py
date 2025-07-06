@@ -330,14 +330,22 @@ async def perform_search(user_id: str, query: str, message) -> None:
                 "has_results": len(results) > 0
             })
             
-            # Filter results by similarity threshold (0.35 minimum for quality)
-            filtered_results = [result for result in results if result.get('similarity_score', 0) >= 0.35]
+            # Filter results by similarity threshold (0.25 minimum for quality)
+            filtered_results = [result for result in results if result.get('similarity_score', 0) >= 0.25]
             
             # Log search results for debugging
             logger.info(f"Search '{query}' returned {len(results)} results, {len(filtered_results)} after filtering")
             if results:
                 top_scores = [f"{r.get('similarity_score', 0):.3f}" for r in results[:5]]
                 logger.info(f"Top 5 similarity scores: {top_scores}")
+                
+                # Log detailed scores for debugging
+                for i, r in enumerate(results[:3]):
+                    embedding_score = r.get('embedding_score', 0)
+                    keyword_score = r.get('keyword_score', 0)
+                    final_score = r.get('similarity_score', 0)
+                    title = r.get('title', 'No title')[:50]
+                    logger.info(f"Result {i+1}: '{title}' - Embedding: {embedding_score:.3f}, Keyword: {keyword_score:.3f}, Final: {final_score:.3f}")
             
             if not filtered_results:
                 await message.reply_text(f"🔍 No relevant results found for: {query}\n💡 Try using different keywords or be more specific.")

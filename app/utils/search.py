@@ -107,6 +107,11 @@ def expand_query_terms(query: str) -> List[str]:
         'guide': ['tutorial', 'howto', 'instructions', 'lesson'],
         'article': ['post', 'blog', 'content', 'piece'],
         'post': ['article', 'blog', 'content', 'piece'],
+        'coupon': ['discount', 'deal', 'offer', 'promotion', 'sale'],
+        'discount': ['coupon', 'deal', 'offer', 'promotion', 'sale'],
+        'deal': ['coupon', 'discount', 'offer', 'promotion', 'sale'],
+        'store': ['shop', 'market', 'supermarket', 'retail'],
+        'shop': ['store', 'market', 'supermarket', 'retail'],
     }
     
     # Extract base terms
@@ -117,6 +122,15 @@ def expand_query_terms(query: str) -> List[str]:
     for term in base_terms:
         if term in synonyms:
             expanded_terms.update(synonyms[term])
+    
+    # Handle specific multi-word phrases
+    query_lower = query.lower()
+    if 'rami levy' in query_lower:
+        expanded_terms.update(['rami', 'levy', 'supermarket', 'grocery'])
+    if 'family tree' in query_lower:
+        expanded_terms.update(['genealogy', 'ancestry', 'relatives', 'lineage'])
+    if 'good movie' in query_lower or 'interesting film' in query_lower:
+        expanded_terms.update(['recommendation', 'watch', 'entertainment'])
     
     return list(expanded_terms)
 
@@ -214,8 +228,9 @@ def search_by_keywords(db, user_id: str, keywords: List[str], top_k: int = 5) ->
     results = []
     for item in items:
         # Calculate enhanced keyword match score
-        score = 0
+        total_score = 0
         matched_keywords = 0
+        keyword_scores = []
         
         # Prepare text fields for searching
         title_text = item.title or ""
@@ -230,49 +245,63 @@ def search_by_keywords(db, user_id: str, keywords: List[str], top_k: int = 5) ->
         for keyword in keywords:
             keyword_score = 0
             
-            # 1. Exact matches (highest weight)
+            # 1. Exact matches (normalized weights)
             if keyword.lower() in title_text.lower():
-                keyword_score += 3.0  # Highest weight for title matches
+                keyword_score += 1.0  # Reduced from 3.0
             if keyword.lower() in description_text.lower():
-                keyword_score += 2.0
+                keyword_score += 0.8  # Reduced from 2.0
             if keyword.lower() in content_text.lower():
-                keyword_score += 1.5
+                keyword_score += 0.6  # Reduced from 1.5
             if keyword.lower() in tags_text.lower():
-                keyword_score += 2.5  # High weight for tag matches
+                keyword_score += 0.9  # Reduced from 2.5
             if keyword.lower() in user_context_text.lower():
-                keyword_score += 1.0
+                keyword_score += 0.4  # Reduced from 1.0
             
-            # 2. Fuzzy matches (medium weight)
+            # 2. Fuzzy matches (normalized weights)
             fuzzy_title = fuzzy_match_score(keyword, title_text, 0.7)
             fuzzy_description = fuzzy_match_score(keyword, description_text, 0.7)
             fuzzy_content = fuzzy_match_score(keyword, content_text, 0.7)
             fuzzy_tags = fuzzy_match_score(keyword, tags_text, 0.7)
             
-            keyword_score += fuzzy_title * 2.0
-            keyword_score += fuzzy_description * 1.5
-            keyword_score += fuzzy_content * 1.0
-            keyword_score += fuzzy_tags * 2.0
+            keyword_score += fuzzy_title * 0.7  # Reduced from 2.0
+            keyword_score += fuzzy_description * 0.5  # Reduced from 1.5
+            keyword_score += fuzzy_content * 0.3  # Reduced from 1.0
+            keyword_score += fuzzy_tags * 0.6  # Reduced from 2.0
             
             # 3. Stemmed matches (lower weight)
             stemmed_keyword = simple_stem(keyword)
             if stemmed_keyword != keyword:
                 if stemmed_keyword in all_text.lower():
-                    keyword_score += 0.5
+                    keyword_score += 0.2  # Reduced from 0.5
             
             if keyword_score > 0:
                 matched_keywords += 1
-                score += keyword_score
+                keyword_scores.append(keyword_score)
         
-        # Bonus for matching multiple keywords
-        if matched_keywords > 1:
-            score *= (1 + 0.1 * (matched_keywords - 1))
+        # 4. Check for exact phrase matches (bonus for multi-word queries)
+        original_query = " ".join(keywords)
+        if len(keywords) > 1 and original_query.lower() in all_text.lower():
+            phrase_bonus = 0.5  # Significant bonus for exact phrase matches
+            if original_query.lower() in title_text.lower():
+                phrase_bonus += 0.3  # Extra bonus if in title
+            elif original_query.lower() in tags_text.lower():
+                phrase_bonus += 0.2  # Extra bonus if in tags
+            keyword_scores.append(phrase_bonus)
         
-        # Normalize score by number of keywords searched
-        if len(keywords) > 0:
-            score = score / len(keywords)
+        # Calculate final score with better normalization
+        if keyword_scores:
+            # Average of keyword scores
+            avg_keyword_score = sum(keyword_scores) / len(keyword_scores)
+            
+            # Bonus for matching multiple keywords (but not too much)
+            keyword_coverage = matched_keywords / len(keywords)
+            coverage_bonus = 1 + (0.3 * keyword_coverage)  # Max 30% bonus
+            
+            # Final score: normalize to 0-1 range
+            total_score = min(1.0, avg_keyword_score * coverage_bonus / 2.0)  # Divide by 2 to normalize
         
         # Only include items with some relevance
-        if score > 0:
+        if total_score > 0:
             results.append({
                 "id": item.id,
                 "user_id": item.user_id,
@@ -289,7 +318,7 @@ def search_by_keywords(db, user_id: str, keywords: List[str], top_k: int = 5) ->
                 "file_size": item.file_size,
                 "mime_type": item.mime_type,
                 "user_context": item.user_context,
-                "similarity_score": score
+                "similarity_score": total_score
             })
     
     # Sort by score (descending)
@@ -321,10 +350,36 @@ def extract_keywords(query: str) -> List[str]:
     words = re.findall(r'\b\w+\b', query.lower())
     keywords = []
     
+    # First pass: identify important multi-word terms that shouldn't be split
+    query_lower = query.lower()
+    important_phrases = []
+    
+    # Check for known important phrases
+    known_phrases = [
+        'rami levy', 'family tree', 'good movie', 'interesting film', 
+        'home decor', 'python programming', 'machine learning'
+    ]
+    
+    for phrase in known_phrases:
+        if phrase in query_lower:
+            important_phrases.append(phrase)
+            # Add individual words too
+            for word in phrase.split():
+                if word not in stopwords and len(word) > 2:
+                    keywords.append(word)
+    
+    # Second pass: add other individual words
     for word in words:
         # Skip stopwords and very short words
         if word not in stopwords and len(word) > 2:
-            keywords.append(word)
+            # Don't add if already part of an important phrase
+            already_included = False
+            for phrase in important_phrases:
+                if word in phrase.split():
+                    already_included = True
+                    break
+            if not already_included:
+                keywords.append(word)
     
     # If no keywords found, use original words (excluding very common ones)
     if not keywords:
@@ -385,25 +440,44 @@ def search_content(user_id: str, query: str, top_k: int = 5, content_type: str =
         results_map = {}
         
         # Add embedding results with weight
-        embedding_weight = 0.7  # Slightly higher weight for semantic similarity
+        embedding_weight = 0.6  # Reduced from 0.7 for more balance
         for result in embedding_results:
             results_map[result["id"]] = {
                 **result,
+                "embedding_score": result["similarity_score"],
+                "keyword_score": 0.0,
                 "similarity_score": result["similarity_score"] * embedding_weight
             }
         
         # Add or update with keyword results
-        keyword_weight = 0.3  # Lower weight for keyword matching
+        keyword_weight = 0.4  # Increased from 0.3 for more balance
         for result in keyword_results:
             if result["id"] in results_map:
                 # Combine scores if item already in results
+                results_map[result["id"]]["keyword_score"] = result["similarity_score"]
                 results_map[result["id"]]["similarity_score"] += result["similarity_score"] * keyword_weight
             else:
                 # Add new item with adjusted score
                 results_map[result["id"]] = {
                     **result,
+                    "embedding_score": 0.0,
+                    "keyword_score": result["similarity_score"],
                     "similarity_score": result["similarity_score"] * keyword_weight
                 }
+        
+        # Apply relevance boost for items that match in both embedding and keyword search
+        for item_id, result in results_map.items():
+            if result["embedding_score"] > 0 and result["keyword_score"] > 0:
+                # Boost score for items that match both semantically and lexically
+                boost = 0.2 * min(result["embedding_score"], result["keyword_score"])
+                result["similarity_score"] += boost
+            
+            # Apply relevance penalty for very generic matches
+            # This helps reduce noise from overly broad keyword matches
+            if result["keyword_score"] > 0 and result["embedding_score"] < 0.3:
+                # If keyword score is high but embedding score is low, it might be a generic match
+                generic_penalty = 0.1 * (result["keyword_score"] - result["embedding_score"])
+                result["similarity_score"] = max(0.1, result["similarity_score"] - generic_penalty)
         
         # Convert map back to list
         combined_results = list(results_map.values())
