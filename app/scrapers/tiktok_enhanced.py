@@ -270,18 +270,61 @@ class TikTokEnhancedScraper:
                 r'window\.__UNIVERSAL_DATA_FOR_REHYDRATION__\s*=\s*({.*?});',
                 r'"props":\s*({.*?"pageProps".*?})',
                 r'"videoDetails":\s*({.*?})',
-                r'"itemInfo":\s*({.*?})'
+                r'"itemInfo":\s*({.*?})',
+                # More specific patterns for TikTok data
+                r'"itemStruct":\s*({.*?"desc".*?})',
+                r'<script[^>]*>\s*window\.__INITIAL_STATE__\s*=\s*({.*?})\s*</script>',
+                r'<script[^>]*>\s*window\.__UNIVERSAL_DATA_FOR_REHYDRATION__\s*=\s*({.*?})\s*</script>',
             ]
             
             for pattern in patterns:
                 matches = re.findall(pattern, html_content, re.DOTALL)
                 for match in matches:
                     try:
-                        json_data = json.loads(match)
+                        # Clean up the match - remove any trailing semicolons or extra characters
+                        clean_match = match.strip().rstrip(';')
+                        json_data = json.loads(clean_match)
                         if isinstance(json_data, dict):
-                            data.update(self._flatten_json_data(json_data))
-                    except:
+                            flattened = self._flatten_json_data(json_data)
+                            data.update(flattened)
+                            logger.info(f"Successfully extracted JSON data with {len(flattened)} fields")
+                    except json.JSONDecodeError as e:
+                        logger.debug(f"Failed to parse JSON match: {e}")
                         continue
+                    except Exception as e:
+                        logger.debug(f"Error processing JSON match: {e}")
+                        continue
+            
+            # If we didn't find structured JSON, try to extract key-value pairs directly
+            if not data:
+                logger.info("No structured JSON found, trying direct extraction")
+                
+                # Look for specific content patterns
+                content_patterns = [
+                    r'"desc":\s*"([^"]*)"',
+                    r'"title":\s*"([^"]*)"',
+                    r'"nickname":\s*"([^"]*)"',
+                    r'"uniqueId":\s*"([^"]*)"',
+                    r'"playCount":\s*(\d+)',
+                    r'"diggCount":\s*(\d+)',
+                    r'"commentCount":\s*(\d+)',
+                    r'"shareCount":\s*(\d+)',
+                ]
+                
+                for pattern in content_patterns:
+                    matches = re.findall(pattern, html_content)
+                    if matches:
+                        field_name = pattern.split('"')[1]  # Extract field name from pattern
+                        # Use the first match (usually the most relevant)
+                        value = matches[0]
+                        # Try to convert to int if it's a number
+                        try:
+                            if value.isdigit():
+                                value = int(value)
+                        except:
+                            pass
+                        data[field_name] = value
+                        logger.info(f"Found {field_name}: {value}")
         
         except Exception as e:
             logger.warning(f"Failed to extract inline JSON: {e}")
@@ -296,11 +339,39 @@ class TikTokEnhancedScraper:
             for key, value in data.items():
                 new_key = f"{prefix}_{key}" if prefix else key
                 
-                if isinstance(value, (dict, list)):
-                    if key in ['author', 'music', 'stats', 'video', 'imagePost']:
+                if isinstance(value, dict):
+                    # Recursively flatten important nested structures
+                    if key in ['author', 'music', 'stats', 'video', 'imagePost', 'itemStruct', 'itemInfo']:
                         flattened.update(self._flatten_json_data(value, new_key))
+                    # Also flatten any dict that contains important fields
+                    elif any(important_key in value for important_key in ['desc', 'title', 'nickname', 'playCount', 'diggCount']):
+                        flattened.update(self._flatten_json_data(value, new_key))
+                elif isinstance(value, list):
+                    # Handle lists - usually take the first item if it's a dict
+                    if len(value) > 0 and isinstance(value[0], dict):
+                        flattened.update(self._flatten_json_data(value[0], new_key))
+                    # For lists of strings/numbers, join them
+                    elif len(value) > 0 and isinstance(value[0], (str, int, float)):
+                        flattened[new_key] = ', '.join(str(item) for item in value[:5])  # Limit to first 5 items
                 elif isinstance(value, (str, int, float, bool)):
                     flattened[new_key] = value
+                    
+                    # Also map common TikTok fields to standard names
+                    if key == 'desc':
+                        flattened['description'] = value
+                    elif key == 'nickname':
+                        flattened['creator'] = value
+                        flattened['uploader'] = value
+                    elif key == 'uniqueId':
+                        flattened['username'] = value
+                    elif key == 'playCount':
+                        flattened['view_count'] = value
+                    elif key == 'diggCount':
+                        flattened['like_count'] = value
+                    elif key == 'commentCount':
+                        flattened['comment_count'] = value
+                    elif key == 'shareCount':
+                        flattened['share_count'] = value
         
         elif isinstance(data, list) and len(data) > 0:
             if isinstance(data[0], dict):
@@ -313,17 +384,35 @@ class TikTokEnhancedScraper:
         try:
             # Extract basic information
             title = data.get('title', '')
-            description = data.get('description', '')
+            description = data.get('description', data.get('desc', ''))  # Use desc if description not found
+            
+            # Handle unicode escapes in description
+            if description:
+                try:
+                    # Handle unicode escapes like \u002F
+                    description = description.encode().decode('unicode_escape')
+                except:
+                    pass
             
             # Clean up title and description
-            if title and ('TikTok' in title or 'tiktok' in title.lower()):
-                # If title is generic TikTok title, use description as title
-                if description and len(description) > len(title):
-                    title = description[:100] + '...' if len(description) > 100 else description
+            if not title or title in ['Category', 'TikTok - Make Your Day', 'TikTok']:
+                # If title is generic or empty, use description as title
+                if description:
+                    # Create a good title from the description
+                    title = description[:80] + '...' if len(description) > 80 else description
+                else:
+                    title = "TikTok Content"
+            
+            # If we have both title and description and they're very similar, use description as title
+            if title and description and len(description) > len(title) * 2:
+                title = description[:80] + '...' if len(description) > 80 else description
             
             # Extract creator information
-            creator = data.get('author_nickname', data.get('author_name', data.get('uploader', '')))
-            creator_url = data.get('author_url', data.get('uploader_url', ''))
+            creator = data.get('creator', data.get('nickname', data.get('uploader', '')))
+            username = data.get('username', data.get('uniqueId', ''))
+            creator_url = data.get('uploader_url', '')
+            if username and not creator_url:
+                creator_url = f"https://www.tiktok.com/@{username}"
             
             # Extract media URLs
             images = []
@@ -345,23 +434,26 @@ class TikTokEnhancedScraper:
             # Format text content
             text_content = f"Title: {title}\n"
             if creator:
-                text_content += f"Creator: {creator}\n"
+                text_content += f"Creator: {creator}"
+                if username:
+                    text_content += f" (@{username})"
+                text_content += "\n"
             if description and description != title:
                 text_content += f"Description: {description}\n"
             
             # Add metrics if available
             if view_count:
-                text_content += f"Views: {view_count}\n"
+                text_content += f"Views: {view_count:,}\n"
             if like_count:
-                text_content += f"Likes: {like_count}\n"
+                text_content += f"Likes: {like_count:,}\n"
             if comment_count:
-                text_content += f"Comments: {comment_count}\n"
+                text_content += f"Comments: {comment_count:,}\n"
             if share_count:
-                text_content += f"Shares: {share_count}\n"
+                text_content += f"Shares: {share_count:,}\n"
             
             return {
                 "success": True,
-                "title": title or "TikTok Content",
+                "title": title,
                 "text": text_content,
                 "description": description,
                 "meta_description": description,
