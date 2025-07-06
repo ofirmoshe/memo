@@ -3,6 +3,7 @@ import numpy as np
 from typing import List, Dict, Any
 import re
 from sqlalchemy import func
+from difflib import SequenceMatcher
 
 from app.db.database import SessionLocal, Item
 from app.utils.llm import generate_embedding
@@ -39,6 +40,106 @@ def cosine_similarity(a, b):
         return 0.0
         
     return dot_product / (norm_a * norm_b)
+
+def fuzzy_match_score(query_word: str, text: str, threshold: float = 0.6) -> float:
+    """
+    Calculate fuzzy matching score between a query word and text.
+    
+    Args:
+        query_word: Word to search for
+        text: Text to search in
+        threshold: Minimum similarity threshold
+        
+    Returns:
+        Best matching score found
+    """
+    if not query_word or not text:
+        return 0.0
+    
+    query_word = query_word.lower()
+    text = text.lower()
+    
+    # Direct substring match gets highest score
+    if query_word in text:
+        return 1.0
+    
+    # Check for fuzzy matches with individual words
+    words = re.findall(r'\b\w+\b', text)
+    best_score = 0.0
+    
+    for word in words:
+        if len(word) < 3:  # Skip very short words
+            continue
+            
+        # Calculate similarity ratio
+        similarity = SequenceMatcher(None, query_word, word).ratio()
+        
+        # Also check if query_word is a substring of word or vice versa
+        if query_word in word or word in query_word:
+            similarity = max(similarity, 0.8)
+        
+        best_score = max(best_score, similarity)
+    
+    return best_score if best_score >= threshold else 0.0
+
+def expand_query_terms(query: str) -> List[str]:
+    """
+    Expand query terms with synonyms and related words.
+    
+    Args:
+        query: Original query
+        
+    Returns:
+        List of expanded terms
+    """
+    # Common synonyms and related terms
+    synonyms = {
+        'movie': ['film', 'cinema', 'video', 'flick'],
+        'film': ['movie', 'cinema', 'video', 'flick'],
+        'recipe': ['cooking', 'food', 'dish', 'meal', 'cuisine'],
+        'cooking': ['recipe', 'food', 'dish', 'meal', 'cuisine'],
+        'family': ['genealogy', 'ancestry', 'relatives', 'kinship'],
+        'genealogy': ['family', 'ancestry', 'relatives', 'kinship'],
+        'tree': ['genealogy', 'ancestry', 'family', 'lineage'],
+        'good': ['great', 'excellent', 'amazing', 'wonderful', 'fantastic'],
+        'interesting': ['fascinating', 'engaging', 'compelling', 'intriguing'],
+        'tutorial': ['guide', 'howto', 'instructions', 'lesson'],
+        'guide': ['tutorial', 'howto', 'instructions', 'lesson'],
+        'article': ['post', 'blog', 'content', 'piece'],
+        'post': ['article', 'blog', 'content', 'piece'],
+    }
+    
+    # Extract base terms
+    base_terms = extract_keywords(query)
+    expanded_terms = set(base_terms)
+    
+    # Add synonyms
+    for term in base_terms:
+        if term in synonyms:
+            expanded_terms.update(synonyms[term])
+    
+    return list(expanded_terms)
+
+def simple_stem(word: str) -> str:
+    """
+    Simple stemming to handle common word variations.
+    
+    Args:
+        word: Word to stem
+        
+    Returns:
+        Stemmed word
+    """
+    word = word.lower()
+    
+    # Handle common suffixes
+    suffixes = ['ing', 'ed', 'er', 'est', 'ly', 'tion', 'sion', 'ness', 'ment', 's']
+    
+    for suffix in suffixes:
+        if word.endswith(suffix) and len(word) > len(suffix) + 2:
+            return word[:-len(suffix)]
+    
+    return word
 
 def search_by_embedding(db, user_id: str, query_embedding: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
     """
@@ -97,7 +198,7 @@ def search_by_embedding(db, user_id: str, query_embedding: List[float], top_k: i
 
 def search_by_keywords(db, user_id: str, keywords: List[str], top_k: int = 5) -> List[Dict[str, Any]]:
     """
-    Search for items by keywords.
+    Enhanced search for items by keywords with fuzzy matching and better scoring.
     
     Args:
         db: Database session
@@ -112,43 +213,84 @@ def search_by_keywords(db, user_id: str, keywords: List[str], top_k: int = 5) ->
     
     results = []
     for item in items:
-        # Calculate keyword match score (simple count of matching keywords)
+        # Calculate enhanced keyword match score
         score = 0
-        for keyword in keywords:
-            # Check in title
-            if keyword.lower() in item.title.lower():
-                score += 2  # Higher weight for title matches
-            
-            # Check in description
-            if keyword.lower() in item.description.lower():
-                score += 1
-            
-            # Check in tags
-            if any(keyword.lower() in tag.lower() for tag in item.tags):
-                score += 1.5  # Medium weight for tag matches
+        matched_keywords = 0
         
-        # Normalize score
+        # Prepare text fields for searching
+        title_text = item.title or ""
+        description_text = item.description or ""
+        content_text = item.content_data or ""
+        tags_text = " ".join(item.tags) if item.tags else ""
+        user_context_text = item.user_context or ""
+        
+        # Combine all searchable text
+        all_text = f"{title_text} {description_text} {content_text} {tags_text} {user_context_text}"
+        
+        for keyword in keywords:
+            keyword_score = 0
+            
+            # 1. Exact matches (highest weight)
+            if keyword.lower() in title_text.lower():
+                keyword_score += 3.0  # Highest weight for title matches
+            if keyword.lower() in description_text.lower():
+                keyword_score += 2.0
+            if keyword.lower() in content_text.lower():
+                keyword_score += 1.5
+            if keyword.lower() in tags_text.lower():
+                keyword_score += 2.5  # High weight for tag matches
+            if keyword.lower() in user_context_text.lower():
+                keyword_score += 1.0
+            
+            # 2. Fuzzy matches (medium weight)
+            fuzzy_title = fuzzy_match_score(keyword, title_text, 0.7)
+            fuzzy_description = fuzzy_match_score(keyword, description_text, 0.7)
+            fuzzy_content = fuzzy_match_score(keyword, content_text, 0.7)
+            fuzzy_tags = fuzzy_match_score(keyword, tags_text, 0.7)
+            
+            keyword_score += fuzzy_title * 2.0
+            keyword_score += fuzzy_description * 1.5
+            keyword_score += fuzzy_content * 1.0
+            keyword_score += fuzzy_tags * 2.0
+            
+            # 3. Stemmed matches (lower weight)
+            stemmed_keyword = simple_stem(keyword)
+            if stemmed_keyword != keyword:
+                if stemmed_keyword in all_text.lower():
+                    keyword_score += 0.5
+            
+            if keyword_score > 0:
+                matched_keywords += 1
+                score += keyword_score
+        
+        # Bonus for matching multiple keywords
+        if matched_keywords > 1:
+            score *= (1 + 0.1 * (matched_keywords - 1))
+        
+        # Normalize score by number of keywords searched
         if len(keywords) > 0:
             score = score / len(keywords)
         
-        results.append({
-            "id": item.id,
-            "user_id": item.user_id,
-            "url": item.url,
-            "title": item.title,
-            "description": item.description,
-            "tags": item.tags,
-            "timestamp": item.timestamp,
-            "content_type": item.content_type,
-            "platform": item.platform,
-            "media_type": item.media_type,
-            "content_data": item.content_data,
-            "file_path": item.file_path,
-            "file_size": item.file_size,
-            "mime_type": item.mime_type,
-            "user_context": item.user_context,
-            "similarity_score": score
-        })
+        # Only include items with some relevance
+        if score > 0:
+            results.append({
+                "id": item.id,
+                "user_id": item.user_id,
+                "url": item.url,
+                "title": item.title,
+                "description": item.description,
+                "tags": item.tags,
+                "timestamp": item.timestamp,
+                "content_type": item.content_type,
+                "platform": item.platform,
+                "media_type": item.media_type,
+                "content_data": item.content_data,
+                "file_path": item.file_path,
+                "file_size": item.file_size,
+                "mime_type": item.mime_type,
+                "user_context": item.user_context,
+                "similarity_score": score
+            })
     
     # Sort by score (descending)
     results.sort(key=lambda x: x["similarity_score"], reverse=True)
@@ -158,7 +300,7 @@ def search_by_keywords(db, user_id: str, keywords: List[str], top_k: int = 5) ->
 
 def extract_keywords(query: str) -> List[str]:
     """
-    Extract keywords from a query.
+    Enhanced keyword extraction with better stopword handling.
     
     Args:
         query: Query string
@@ -166,15 +308,34 @@ def extract_keywords(query: str) -> List[str]:
     Returns:
         List of keywords
     """
-    # Simple keyword extraction (remove common words and split)
-    stopwords = {"a", "an", "the", "in", "on", "at", "for", "to", "and", "or", "of", "with", "that", "this", "it", "is", "are", "was", "were", "be", "been"}
+    # Expanded stopwords list
+    stopwords = {
+        "a", "an", "the", "in", "on", "at", "for", "to", "and", "or", "of", "with", "that", "this", "it", "is", "are", "was", "were", "be", "been",
+        "have", "has", "had", "do", "does", "did", "will", "would", "could", "should", "may", "might", "can", "must",
+        "i", "you", "he", "she", "we", "they", "me", "him", "her", "us", "them", "my", "your", "his", "her", "our", "their",
+        "but", "if", "so", "as", "up", "out", "by", "from", "into", "over", "under", "about", "through", "during", "before", "after",
+        "find", "search", "look", "show", "get", "give", "want", "need", "like", "know", "think", "see", "come", "go", "make", "take"
+    }
+    
+    # Extract words and clean them
     words = re.findall(r'\b\w+\b', query.lower())
-    keywords = [word for word in words if word not in stopwords and len(word) > 2]
+    keywords = []
+    
+    for word in words:
+        # Skip stopwords and very short words
+        if word not in stopwords and len(word) > 2:
+            keywords.append(word)
+    
+    # If no keywords found, use original words (excluding very common ones)
+    if not keywords:
+        minimal_stopwords = {"a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with"}
+        keywords = [word for word in words if word not in minimal_stopwords and len(word) > 1]
+    
     return keywords
 
 def search_content(user_id: str, query: str, top_k: int = 5, content_type: str = None, platform: str = None, similarity_threshold: float = 0.0) -> List[Dict[str, Any]]:
     """
-    Search for content using a natural language query.
+    Enhanced search for content using a natural language query.
     
     Args:
         user_id: User ID
@@ -189,42 +350,59 @@ def search_content(user_id: str, query: str, top_k: int = 5, content_type: str =
     """
     logger.info(f"Searching content for user {user_id} with query: {query}")
     
+    # Handle edge cases
+    if not query or not query.strip():
+        logger.warning("Empty query provided")
+        return []
+    
+    query = query.strip()
+    
     # Generate embedding for query
     query_embedding = generate_embedding(query)
     
-    # Extract keywords from query
-    keywords = extract_keywords(query)
-    logger.info(f"Extracted keywords: {keywords}")
+    # Extract and expand keywords from query
+    base_keywords = extract_keywords(query)
+    expanded_keywords = expand_query_terms(query)
+    all_keywords = list(set(base_keywords + expanded_keywords))
+    
+    logger.info(f"Base keywords: {base_keywords}")
+    logger.info(f"Expanded keywords: {expanded_keywords}")
+    
+    # If no keywords found, use the original query words
+    if not all_keywords:
+        all_keywords = query.lower().split()
+        logger.info(f"Using fallback keywords: {all_keywords}")
     
     db = SessionLocal()
     try:
         # Get results from embedding-based search
-        embedding_results = search_by_embedding(db, user_id, query_embedding, top_k * 2)
+        embedding_results = search_by_embedding(db, user_id, query_embedding, top_k * 3)
         
         # Get results from keyword-based search
-        keyword_results = search_by_keywords(db, user_id, keywords, top_k * 2)
+        keyword_results = search_by_keywords(db, user_id, all_keywords, top_k * 3)
         
         # Combine results (hybrid search)
-        # Create a map of id -> result for easier merging
         results_map = {}
         
-        # Add embedding results
+        # Add embedding results with weight
+        embedding_weight = 0.7  # Slightly higher weight for semantic similarity
         for result in embedding_results:
             results_map[result["id"]] = {
                 **result,
-                "similarity_score": result["similarity_score"] * 0.7  # 70% weight for embedding similarity
+                "similarity_score": result["similarity_score"] * embedding_weight
             }
         
         # Add or update with keyword results
+        keyword_weight = 0.3  # Lower weight for keyword matching
         for result in keyword_results:
             if result["id"] in results_map:
                 # Combine scores if item already in results
-                results_map[result["id"]]["similarity_score"] += result["similarity_score"] * 0.3  # 30% weight for keyword matching
+                results_map[result["id"]]["similarity_score"] += result["similarity_score"] * keyword_weight
             else:
                 # Add new item with adjusted score
                 results_map[result["id"]] = {
                     **result,
-                    "similarity_score": result["similarity_score"] * 0.3  # 30% weight for keyword matching
+                    "similarity_score": result["similarity_score"] * keyword_weight
                 }
         
         # Convert map back to list

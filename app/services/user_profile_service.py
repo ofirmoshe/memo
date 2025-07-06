@@ -365,13 +365,13 @@ class UserProfileService:
                 provider_email=provider_data.get("email"),
                 is_primary=True,  # First provider is primary
                 created_at=datetime.utcnow(),
-                metadata=provider_data.get("metadata", {})
+                provider_metadata=provider_data.get("metadata", {})
             )
             self.db.add(auth_provider)
         else:
             # Update existing
             auth_provider.last_used_at = datetime.utcnow()
-            auth_provider.metadata = provider_data.get("metadata", {})
+            auth_provider.provider_metadata = provider_data.get("metadata", {})
     
     def _extract_provider_user_id(self, provider: AuthProvider, provider_data: Dict[str, Any]) -> str:
         """Extract provider user ID from provider data."""
@@ -404,7 +404,7 @@ class UserProfileService:
                 is_primary=auth_provider.is_primary,
                 created_at=auth_provider.created_at,
                 last_used_at=auth_provider.last_used_at,
-                metadata=auth_provider.metadata or {}
+                metadata=auth_provider.provider_metadata or {}
             ))
         
         # Convert preferences

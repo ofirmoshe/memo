@@ -330,8 +330,14 @@ async def perform_search(user_id: str, query: str, message) -> None:
                 "has_results": len(results) > 0
             })
             
-            # Filter results by similarity threshold (0.35 minimum)
+            # Filter results by similarity threshold (0.35 minimum for quality)
             filtered_results = [result for result in results if result.get('similarity_score', 0) >= 0.35]
+            
+            # Log search results for debugging
+            logger.info(f"Search '{query}' returned {len(results)} results, {len(filtered_results)} after filtering")
+            if results:
+                top_scores = [f"{r.get('similarity_score', 0):.3f}" for r in results[:5]]
+                logger.info(f"Top 5 similarity scores: {top_scores}")
             
             if not filtered_results:
                 await message.reply_text(f"🔍 No relevant results found for: {query}\n💡 Try using different keywords or be more specific.")
@@ -400,9 +406,10 @@ async def perform_search(user_id: str, query: str, message) -> None:
                         content_data = result.get('content_data', '')
                         tags = result.get('tags', [])
                         item_id = result.get('id')
+                        similarity = result.get('similarity_score', 0)
                         
                         # Send as a separate message for easy copying
-                        copy_text = f"📝 **{title}**\n\n{content_data}"
+                        copy_text = f"📝 **{title}** (Relevance: {similarity:.2f})\n\n{content_data}"
                         if tags:
                             copy_text += f"\n\n🏷️ Tags: {', '.join(tags[:3])}"
                         
@@ -1151,4 +1158,4 @@ def main() -> None:
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
-    main() 
+    main()

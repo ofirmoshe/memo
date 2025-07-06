@@ -375,9 +375,10 @@ async def save_file(request: SaveFileRequest, db: Session = Depends(get_db)):
 
 @app.post("/search", response_model=List[MemoraItem])
 async def search_content(request: SearchRequest, db: Session = Depends(get_db)):
-    """Search for content using semantic similarity."""
+    """Search for saved content."""
     try:
         logger.info(f"Searching for: {request.query} (user: {request.user_id})")
+        logger.info(f"Search parameters: top_k={request.top_k}, similarity_threshold={request.similarity_threshold}")
         
         results = search_items(
             db=db,
@@ -389,6 +390,16 @@ async def search_content(request: SearchRequest, db: Session = Depends(get_db)):
             media_type=request.media_type,
             similarity_threshold=request.similarity_threshold
         )
+        
+        # Log search results for debugging
+        logger.info(f"Search returned {len(results)} results")
+        if results:
+            top_scores = [f"{r.get('similarity_score', 0):.3f}" for r in results[:5]]
+            logger.info(f"Top 5 similarity scores: {top_scores}")
+            
+            # Log some sample results for debugging
+            for i, result in enumerate(results[:3]):
+                logger.info(f"Result {i+1}: title='{result.get('title', '')[:50]}...', score={result.get('similarity_score', 0):.3f}")
         
         return results
         
