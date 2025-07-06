@@ -12,6 +12,7 @@ import time
 import random
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from app.scrapers.tiktok_enhanced import extract_tiktok_enhanced
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -49,17 +50,26 @@ def scrape_social_media(url: str) -> Dict[str, Any]:
         url: Social media URL to scrape
         
     Returns:
-        Dictionary with extracted content and success indicator
+        Dictionary with extracted content
     """
-    logger.info(f"Scraping social media URL: {url}")
-    
     try:
-        # Create a temporary directory for downloaded metadata
+        logger.info(f"Starting social media scraping for: {url}")
+        
+        # Detect platform
+        platform = extract_platform_name(url)
+        logger.info(f"Detected platform: {platform}")
+        
+        # Add random delay to avoid rate limiting
+        delay = random.uniform(1, 3)
+        logger.info(f"Adding {delay:.1f}s delay before scraping...")
+        time.sleep(delay)
+        
+        # Initialize variables
+        success = False
+        metadata = {}
+        
+        # Create temp directory for downloads
         with tempfile.TemporaryDirectory() as temp_dir:
-            parsed_url = urlparse(url)
-            domain = parsed_url.netloc.lower()
-            platform = extract_platform_name(domain)
-            
             # Check if yt-dlp is installed and accessible
             try:
                 version_cmd = ["yt-dlp", "--version"]
@@ -70,69 +80,70 @@ def scrape_social_media(url: str) -> Dict[str, Any]:
                     logger.warning("yt-dlp version check failed, but continuing anyway")
             except Exception as e:
                 logger.error(f"Error checking yt-dlp version: {str(e)}")
-            
+                
             # Platform-specific handling
-            if platform == "YouTube":
-                result = extract_youtube_content(url, temp_dir)
-                if result:
-                    result["success"] = True
-                    return result
-            
-            # For Facebook, skip yt-dlp attempts due to connection issues and go straight to alternatives
-            success = False
-            metadata = None
-            
-            if platform == "Facebook":
-                logger.info("Facebook URL detected - using alternative extraction methods to avoid connection issues")
+            if platform == "TikTok":
+                # Use enhanced TikTok scraper for both videos and photo posts
+                logger.info("Using enhanced TikTok scraper")
+                result = extract_tiktok_enhanced(url)
+                return result
+            elif platform == "Facebook":
+                # For Facebook, skip yt-dlp attempts due to connection issues and go straight to alternatives
+                logger.info("Facebook detected - using alternative extraction methods")
                 
-                # Add minimal delay to avoid rate limiting
-                time.sleep(random.uniform(1, 2))
+                # Try Facebook-specific extraction methods
+                try:
+                    result = extract_facebook_content_robust(url)
+                    if result:
+                        result["success"] = True
+                        return result
+                except Exception as fb_error:
+                    logger.warning(f"Facebook extraction failed: {str(fb_error)}")
                 
-                # Try enhanced Facebook extraction with better connection handling
-                result = extract_facebook_content_robust(url)
-                if result:
-                    result["success"] = True
-                    return result
+                # Try Facebook oEmbed API
+                try:
+                    result = extract_facebook_oembed(url)
+                    if result:
+                        result["success"] = True
+                        return result
+                except Exception as oembed_error:
+                    logger.warning(f"Facebook oEmbed failed: {str(oembed_error)}")
                 
-                # If that fails, use URL-based extraction as final fallback
-                result = extract_facebook_info_from_url(url)
-                if result:
-                    result["success"] = True
-                    return result
+                # Try extracting info from URL
+                try:
+                    result = extract_facebook_info_from_url(url)
+                    if result:
+                        result["success"] = True
+                        return result
+                except Exception as info_error:
+                    logger.warning(f"Facebook info extraction failed: {str(info_error)}")
+                
             elif platform == "Instagram":
-                logger.info("Instagram URL detected - using enhanced extraction methods for better reliability")
-                
-                # Add initial delay to avoid rate limiting
-                time.sleep(random.uniform(1, 2))
-                
-                # Try enhanced Instagram extraction with better connection handling
-                result = extract_instagram_content_robust(url)
-                if result:
-                    result["success"] = True
-                    return result
+                # For Instagram, try robust extraction first
+                try:
+                    result = extract_instagram_content_robust(url)
+                    if result:
+                        result["success"] = True
+                        return result
+                except Exception as ig_error:
+                    logger.warning(f"Instagram robust extraction failed: {str(ig_error)}")
                 
                 # If that fails, try yt-dlp as backup
                 try:
-                    # Clean up temp directory
-                    for f in os.listdir(temp_dir):
-                        if f.endswith('.info.json'):
-                            os.remove(os.path.join(temp_dir, f))
-                    
-                    instagram_cmd = [
+                    simple_cmd = [
                         "yt-dlp",
                         "--skip-download",
                         "--write-info-json",
                         "--no-warnings",
                         "--ignore-errors",
-                        "--socket-timeout", "20",
-                        "--retries", "2",
-                        "--add-header", "User-Agent:Mozilla/5.0 (iPhone; CPU iPhone OS 15_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
+                        "--socket-timeout", "15",
+                        "--retries", "1",
                         "-o", f"{temp_dir}/%(id)s",
                         url
                     ]
                     
                     logger.info(f"Trying yt-dlp as backup for Instagram")
-                    process = subprocess.run(instagram_cmd, capture_output=True, text=True, timeout=45)
+                    process = subprocess.run(simple_cmd, capture_output=True, text=True, timeout=30)
                     
                     if process.returncode == 0:
                         json_files = [f for f in os.listdir(temp_dir) if f.endswith('.info.json')]
@@ -141,54 +152,25 @@ def scrape_social_media(url: str) -> Dict[str, Any]:
                                 metadata = json.load(f)
                             success = True
                             logger.info("Successfully extracted Instagram content with yt-dlp backup")
-                        
+                    else:
+                        logger.warning(f"Instagram yt-dlp backup failed: {str(e)}")
                 except Exception as e:
                     logger.warning(f"Instagram yt-dlp backup failed: {str(e)}")
                 
-                # If both methods failed, use URL-based extraction as final fallback
+                # If yt-dlp also fails, try URL info extraction
                 if not success:
-                    result = extract_instagram_info_from_url(url)
-                    if result:
-                        result["success"] = True
-                        return result
+                    try:
+                        result = extract_instagram_info_from_url(url)
+                        if result:
+                            result["success"] = True
+                            return result
+                    except Exception as info_error:
+                        logger.warning(f"Instagram info extraction failed: {str(info_error)}")
             else:
-                # For non-Facebook platforms, try yt-dlp with reduced attempts
+                # For other platforms, try yt-dlp with reduced attempts
                 # Add a random delay before starting to avoid rate limiting
                 initial_delay = random.uniform(1, 2)
                 time.sleep(initial_delay)
-                
-                # Special handling for TikTok photo posts - yt-dlp doesn't support them
-                if platform == "TikTok":
-                    # Check if this is a photo post by resolving the URL first
-                    try:
-                        # Follow redirects to get the actual TikTok URL
-                        response = requests.head(url, allow_redirects=True, timeout=10)
-                        final_url = response.url
-                        
-                        # If it's a photo post, return a clear error message
-                        if "/photo/" in final_url:
-                            logger.info(f"TikTok photo post detected: {final_url}")
-                            
-                            return {
-                                "success": False,
-                                "error": "TikTok photo posts are not supported yet. yt-dlp doesn't support TikTok photo posts, only videos. Please try with a TikTok video URL instead.",
-                                "title": "TikTok Photo Post Not Supported",
-                                "text": "TikTok photo posts are not currently supported for content extraction. This is a limitation of the underlying extraction tools. Please try with a TikTok video URL instead.",
-                                "meta_description": "",
-                                "uploader": "",
-                                "uploader_url": "",
-                                "images": [],
-                                "url": url,
-                                "platform": "TikTok",
-                                "raw_metadata": {
-                                    "content_type": "photo_post",
-                                    "support_status": "not_supported",
-                                    "final_url": final_url
-                                }
-                            }
-                    except Exception as resolve_error:
-                        logger.warning(f"Could not resolve TikTok URL for photo detection: {resolve_error}")
-                        # Continue with yt-dlp attempt if URL resolution fails
                 
                 # Try only one simplified yt-dlp approach to avoid socket exhaustion
                 try:
@@ -197,39 +179,19 @@ def scrape_social_media(url: str) -> Dict[str, Any]:
                         if f.endswith('.info.json'):
                             os.remove(os.path.join(temp_dir, f))
                     
-                    # Platform-specific yt-dlp commands
-                    if platform == "TikTok":
-                        # Special handling for TikTok - focus on metadata only, works for both videos and photo posts
-                        simple_cmd = [
-                            "yt-dlp",
-                            "--skip-download",  # Don't download media files
-                            "--write-info-json",  # Only extract metadata
-                            "--no-warnings",
-                            "--ignore-errors",
-                            "--no-check-certificate",  # Skip SSL verification issues
-                            "--socket-timeout", "20",
-                            "--retries", "2",
-                            "--extractor-args", "tiktok:webpage_download=false",  # Skip webpage download
-                            "--add-header", "User-Agent:Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
-                            "--add-header", "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                            "-o", f"{temp_dir}/%(id)s",
-                            url
-                        ]
-                        logger.info(f"Running TikTok metadata-only command")
-                    else:
-                        # General command for other platforms
-                        simple_cmd = [
-                            "yt-dlp",
-                            "--skip-download",
-                            "--write-info-json",
-                            "--no-warnings",
-                            "--ignore-errors",
-                            "--socket-timeout", "15",
-                            "--retries", "1",
-                            "-o", f"{temp_dir}/%(id)s",
-                            url
-                        ]
-                        logger.info(f"Running simplified yt-dlp command for {platform}")
+                    # General command for other platforms
+                    simple_cmd = [
+                        "yt-dlp",
+                        "--skip-download",
+                        "--write-info-json",
+                        "--no-warnings",
+                        "--ignore-errors",
+                        "--socket-timeout", "15",
+                        "--retries", "1",
+                        "-o", f"{temp_dir}/%(id)s",
+                        url
+                    ]
+                    logger.info(f"Running simplified yt-dlp command for {platform}")
                     
                     process = subprocess.run(simple_cmd, capture_output=True, text=True, timeout=30)
                     
@@ -239,9 +201,9 @@ def scrape_social_media(url: str) -> Dict[str, Any]:
                             with open(os.path.join(temp_dir, json_files[0]), 'r', encoding='utf-8') as f:
                                 metadata = json.load(f)
                             success = True
-                            logger.info(f"Successfully extracted {platform} metadata with specialized command")
+                            logger.info(f"Successfully extracted {platform} metadata with simplified command")
                     else:
-                        logger.warning(f"Specialized yt-dlp failed: {process.stderr}")
+                        logger.warning(f"Simplified yt-dlp failed: {process.stderr}")
                         
                 except subprocess.TimeoutExpired:
                     logger.warning(f"{platform} yt-dlp command timed out")
@@ -264,7 +226,7 @@ def scrape_social_media(url: str) -> Dict[str, Any]:
                     if alternative_result:
                         alternative_result["success"] = True
                         return alternative_result
-            
+
             # If we have successfully extracted metadata, process it
             if metadata:
                 # Extract relevant information based on platform
