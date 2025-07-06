@@ -335,6 +335,12 @@ async def perform_search(user_id: str, query: str, message) -> None:
             dynamic_threshold = determine_dynamic_threshold(query, results)
             filtered_results = [result for result in results if result.get('similarity_score', 0) >= dynamic_threshold]
             
+            # If using fallback threshold (0.15), limit results to prevent noise
+            if dynamic_threshold <= 0.15:
+                # Only show top 5 results when using fallback threshold
+                filtered_results = filtered_results[:5]
+                logger.info(f"Limited fallback results to {len(filtered_results)} items")
+            
             # Log search results for debugging
             logger.info(f"Search '{query}' returned {len(results)} results, {len(filtered_results)} after filtering (threshold: {dynamic_threshold:.3f})")
             if results:
@@ -353,7 +359,12 @@ async def perform_search(user_id: str, query: str, message) -> None:
                 # Provide more helpful feedback based on whether we had any results at all
                 if results:
                     max_score = max(r.get('similarity_score', 0) for r in results)
-                    await message.reply_text(f"🔍 No highly relevant results found for: {query}\n💡 Best match scored {max_score:.2f}. Try using different keywords, synonyms, or be more specific.")
+                    if dynamic_threshold >= 1.0:
+                        # Results were filtered out due to poor quality
+                        await message.reply_text(f"🔍 No relevant results found for: {query}\n💡 Found some content but it wasn't closely related (best match: {max_score:.2f}). Try using different keywords, synonyms, or be more specific.")
+                    else:
+                        # Results were filtered out due to threshold
+                        await message.reply_text(f"🔍 No highly relevant results found for: {query}\n💡 Best match scored {max_score:.2f}. Try using different keywords, synonyms, or be more specific.")
                 else:
                     await message.reply_text(f"🔍 No results found for: {query}\n💡 Try using different keywords or check if you have saved content related to this topic.")
                 return

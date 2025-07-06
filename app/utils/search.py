@@ -786,7 +786,12 @@ def search_items(db, user_id: str, query: str, top_k: int = 5, content_type: str
 
 def determine_dynamic_threshold(query: str, results: List[Dict[str, Any]]) -> float:
     """
-    Determine optimal similarity threshold based on query characteristics and result distribution.
+    Determine optimal similarity threshold based on result quality distribution.
+    
+    Strategy:
+    1. Try primary threshold (0.35) - good quality results
+    2. If too few results, fallback to secondary threshold (0.15) - but only if needed
+    3. Always prioritize quality over quantity
     
     Args:
         query: The search query
@@ -798,86 +803,42 @@ def determine_dynamic_threshold(query: str, results: List[Dict[str, Any]]) -> fl
     if not results:
         return 0.0
     
-    # Extract similarity scores
+    # Extract and sort similarity scores
     scores = [r.get('similarity_score', 0) for r in results]
     scores.sort(reverse=True)
     
-    # Query characteristics
-    query_words = query.strip().split()
-    is_single_word = len(query_words) == 1
-    is_short_query = len(query_words) <= 2
-    query_length = len(query.strip())
+    # Primary threshold for good quality results
+    primary_threshold = 0.35
+    secondary_threshold = 0.15
     
-    # Score distribution analysis
+    # Count results above primary threshold
+    high_quality_count = sum(1 for score in scores if score >= primary_threshold)
+    
+    # If we have good results (3+ above 0.35), use primary threshold
+    if high_quality_count >= 3:
+        final_threshold = primary_threshold
+        logger.info(f"Using primary threshold {primary_threshold:.3f} - found {high_quality_count} high-quality results")
+    
+    # If we have some good results (1-2 above 0.35), still use primary but be slightly more lenient
+    elif high_quality_count >= 1:
+        # Use primary threshold but allow one more result if it's close
+        final_threshold = max(0.30, primary_threshold)
+        logger.info(f"Using slightly relaxed threshold {final_threshold:.3f} - found {high_quality_count} high-quality results")
+    
+    # If no good results, check if we have any reasonable results in the fallback range
+    else:
+        reasonable_count = sum(1 for score in scores if score >= secondary_threshold)
+        if reasonable_count >= 1:
+            # Use secondary threshold but cap the number of results we'll show
+            final_threshold = secondary_threshold
+            logger.info(f"Using fallback threshold {final_threshold:.3f} - found {reasonable_count} reasonable results")
+        else:
+            # Very poor results - don't show anything rather than showing irrelevant results
+            final_threshold = 1.0  # Set impossibly high threshold to filter out all results
+            logger.info(f"All results are poor quality (max score: {max(scores) if scores else 0:.3f}) - filtering out all results")
+    
+    # Log the decision
     max_score = max(scores) if scores else 0
-    avg_score = sum(scores) / len(scores) if scores else 0
-    
-    # Calculate percentiles
-    if len(scores) >= 4:
-        top_25_percent_idx = len(scores) // 4
-        top_50_percent_idx = len(scores) // 2
-        top_25_score = scores[top_25_percent_idx]
-        median_score = scores[top_50_percent_idx]
-    else:
-        top_25_score = max_score * 0.8
-        median_score = avg_score
-    
-    # Base threshold determination
-    if is_single_word:
-        # Single word queries: more lenient threshold
-        if max_score < 0.3:
-            # Very low scores overall - be very lenient
-            base_threshold = max(0.1, max_score * 0.4)
-        elif max_score < 0.5:
-            # Low-medium scores - moderately lenient
-            base_threshold = max(0.15, max_score * 0.5)
-        else:
-            # Good scores - normal threshold
-            base_threshold = max(0.2, max_score * 0.6)
-    elif is_short_query:
-        # Short queries (2 words): slightly more lenient
-        if max_score < 0.4:
-            base_threshold = max(0.15, max_score * 0.5)
-        else:
-            base_threshold = max(0.2, max_score * 0.65)
-    else:
-        # Multi-word queries: normal threshold
-        if max_score < 0.5:
-            base_threshold = max(0.2, max_score * 0.6)
-        else:
-            base_threshold = max(0.25, max_score * 0.7)
-    
-    # Adjust based on result distribution
-    if len(scores) >= 10:
-        # Many results: can be more selective
-        # Use the score that represents the top 30% of results
-        top_30_percent_idx = max(1, len(scores) * 3 // 10)
-        distribution_threshold = scores[top_30_percent_idx]
-        base_threshold = max(base_threshold, distribution_threshold * 0.9)
-    elif len(scores) >= 5:
-        # Moderate results: use top 40%
-        top_40_percent_idx = max(1, len(scores) * 2 // 5)
-        distribution_threshold = scores[top_40_percent_idx]
-        base_threshold = max(base_threshold, distribution_threshold * 0.8)
-    else:
-        # Few results: be more lenient
-        if len(scores) >= 2:
-            base_threshold = min(base_threshold, scores[1] * 0.9)  # Allow top 2 results
-    
-    # Quality safeguards
-    # Don't go below 0.08 (very low quality) or above 0.4 (too restrictive)
-    final_threshold = max(0.08, min(0.4, base_threshold))
-    
-    # Special handling for very specific queries
-    query_lower = query.lower()
-    specific_terms = ['coupon', 'discount', 'deal', 'recipe', 'ikea', 'hack', 'diy', 'tutorial']
-    if any(term in query_lower for term in specific_terms):
-        # These are specific enough that we can be more lenient
-        final_threshold = min(final_threshold, 0.25)
-    
-    logger.info(f"Dynamic threshold calculation for '{query}':")
-    logger.info(f"  Query type: {'single-word' if is_single_word else 'multi-word'}, length: {query_length}")
-    logger.info(f"  Score stats: max={max_score:.3f}, avg={avg_score:.3f}, results={len(scores)}")
-    logger.info(f"  Base threshold: {base_threshold:.3f}, Final threshold: {final_threshold:.3f}")
+    logger.info(f"Dynamic threshold for '{query}': {final_threshold:.3f} (max_score: {max_score:.3f}, total_results: {len(scores)})")
     
     return final_threshold 

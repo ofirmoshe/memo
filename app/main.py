@@ -397,6 +397,12 @@ async def search_content(request: SearchRequest, db: Session = Depends(get_db)):
             dynamic_threshold = determine_dynamic_threshold(request.query, results)
             logger.info(f"Using dynamic threshold: {dynamic_threshold:.3f}")
             results = [r for r in results if r.get('similarity_score', 0) >= dynamic_threshold]
+            
+            # If using fallback threshold (0.15), limit results to prevent noise
+            if dynamic_threshold <= 0.15:
+                # Only show top 5 results when using fallback threshold
+                results = results[:5]
+                logger.info(f"Limited fallback results to {len(results)} items")
         else:
             # Use explicit threshold
             results = [r for r in results if r.get('similarity_score', 0) >= request.similarity_threshold]
