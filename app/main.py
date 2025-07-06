@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 from app.models.schemas import ExtractRequest, SearchRequest, MemoraItem, SaveTextRequest, SaveFileRequest
 from app.db.database import get_db, init_db, get_or_create_user, Item
 from app.utils.extractor import extract_and_save_content, extract_content_from_url
-from app.utils.search import search_content, get_all_items, get_all_tags, get_items_by_tag, delete_item, search_items
+from app.utils.search import search_content, get_all_items, get_all_tags, get_items_by_tag, delete_item, search_items, determine_dynamic_threshold
 from app.utils.llm import analyze_content_with_llm, generate_embedding, get_content_analysis_prompt, get_llm_response, get_text_analysis_prompt, get_file_analysis_prompt, analyze_image_with_llm, detect_intent_and_translate
 from app.utils.file_processor import FileProcessor
 import json
@@ -380,6 +380,7 @@ async def search_content(request: SearchRequest, db: Session = Depends(get_db)):
         logger.info(f"Searching for: {request.query} (user: {request.user_id})")
         logger.info(f"Search parameters: top_k={request.top_k}, similarity_threshold={request.similarity_threshold}")
         
+        # First get results without threshold filtering
         results = search_items(
             db=db,
             user_id=request.user_id,
@@ -388,8 +389,17 @@ async def search_content(request: SearchRequest, db: Session = Depends(get_db)):
             content_type=request.content_type,
             platform=request.platform,
             media_type=request.media_type,
-            similarity_threshold=request.similarity_threshold
+            similarity_threshold=0.0  # Get all results first
         )
+        
+        # Apply dynamic threshold if no explicit threshold was provided
+        if request.similarity_threshold == 0.0:
+            dynamic_threshold = determine_dynamic_threshold(request.query, results)
+            logger.info(f"Using dynamic threshold: {dynamic_threshold:.3f}")
+            results = [r for r in results if r.get('similarity_score', 0) >= dynamic_threshold]
+        else:
+            # Use explicit threshold
+            results = [r for r in results if r.get('similarity_score', 0) >= request.similarity_threshold]
         
         # Log search results for debugging
         logger.info(f"Search returned {len(results)} results")

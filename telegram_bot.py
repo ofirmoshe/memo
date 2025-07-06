@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 from app.utils.file_processor import FileProcessor
 from io import BytesIO
 from app.utils.llm import detect_intent_and_translate
+from app.utils.search import determine_dynamic_threshold
 
 # User Profile imports (optional)
 try:
@@ -330,11 +331,12 @@ async def perform_search(user_id: str, query: str, message) -> None:
                 "has_results": len(results) > 0
             })
             
-            # Filter results by similarity threshold (0.25 minimum for quality)
-            filtered_results = [result for result in results if result.get('similarity_score', 0) >= 0.25]
+            # Filter results by similarity threshold (dynamic based on query and results)
+            dynamic_threshold = determine_dynamic_threshold(query, results)
+            filtered_results = [result for result in results if result.get('similarity_score', 0) >= dynamic_threshold]
             
             # Log search results for debugging
-            logger.info(f"Search '{query}' returned {len(results)} results, {len(filtered_results)} after filtering")
+            logger.info(f"Search '{query}' returned {len(results)} results, {len(filtered_results)} after filtering (threshold: {dynamic_threshold:.3f})")
             if results:
                 top_scores = [f"{r.get('similarity_score', 0):.3f}" for r in results[:5]]
                 logger.info(f"Top 5 similarity scores: {top_scores}")
@@ -348,7 +350,12 @@ async def perform_search(user_id: str, query: str, message) -> None:
                     logger.info(f"Result {i+1}: '{title}' - Embedding: {embedding_score:.3f}, Keyword: {keyword_score:.3f}, Final: {final_score:.3f}")
             
             if not filtered_results:
-                await message.reply_text(f"🔍 No relevant results found for: {query}\n💡 Try using different keywords or be more specific.")
+                # Provide more helpful feedback based on whether we had any results at all
+                if results:
+                    max_score = max(r.get('similarity_score', 0) for r in results)
+                    await message.reply_text(f"🔍 No highly relevant results found for: {query}\n💡 Best match scored {max_score:.2f}. Try using different keywords, synonyms, or be more specific.")
+                else:
+                    await message.reply_text(f"🔍 No results found for: {query}\n💡 Try using different keywords or check if you have saved content related to this topic.")
                 return
             
             # Check if there are any non-text items to show in summary

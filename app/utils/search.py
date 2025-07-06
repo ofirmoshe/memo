@@ -782,4 +782,102 @@ def search_items(db, user_id: str, query: str, top_k: int = 5, content_type: str
         
     except Exception as e:
         logger.error(f"Error searching items: {str(e)}")
-        raise 
+        raise
+
+def determine_dynamic_threshold(query: str, results: List[Dict[str, Any]]) -> float:
+    """
+    Determine optimal similarity threshold based on query characteristics and result distribution.
+    
+    Args:
+        query: The search query
+        results: List of search results with similarity scores
+        
+    Returns:
+        Optimal threshold value
+    """
+    if not results:
+        return 0.0
+    
+    # Extract similarity scores
+    scores = [r.get('similarity_score', 0) for r in results]
+    scores.sort(reverse=True)
+    
+    # Query characteristics
+    query_words = query.strip().split()
+    is_single_word = len(query_words) == 1
+    is_short_query = len(query_words) <= 2
+    query_length = len(query.strip())
+    
+    # Score distribution analysis
+    max_score = max(scores) if scores else 0
+    avg_score = sum(scores) / len(scores) if scores else 0
+    
+    # Calculate percentiles
+    if len(scores) >= 4:
+        top_25_percent_idx = len(scores) // 4
+        top_50_percent_idx = len(scores) // 2
+        top_25_score = scores[top_25_percent_idx]
+        median_score = scores[top_50_percent_idx]
+    else:
+        top_25_score = max_score * 0.8
+        median_score = avg_score
+    
+    # Base threshold determination
+    if is_single_word:
+        # Single word queries: more lenient threshold
+        if max_score < 0.3:
+            # Very low scores overall - be very lenient
+            base_threshold = max(0.1, max_score * 0.4)
+        elif max_score < 0.5:
+            # Low-medium scores - moderately lenient
+            base_threshold = max(0.15, max_score * 0.5)
+        else:
+            # Good scores - normal threshold
+            base_threshold = max(0.2, max_score * 0.6)
+    elif is_short_query:
+        # Short queries (2 words): slightly more lenient
+        if max_score < 0.4:
+            base_threshold = max(0.15, max_score * 0.5)
+        else:
+            base_threshold = max(0.2, max_score * 0.65)
+    else:
+        # Multi-word queries: normal threshold
+        if max_score < 0.5:
+            base_threshold = max(0.2, max_score * 0.6)
+        else:
+            base_threshold = max(0.25, max_score * 0.7)
+    
+    # Adjust based on result distribution
+    if len(scores) >= 10:
+        # Many results: can be more selective
+        # Use the score that represents the top 30% of results
+        top_30_percent_idx = max(1, len(scores) * 3 // 10)
+        distribution_threshold = scores[top_30_percent_idx]
+        base_threshold = max(base_threshold, distribution_threshold * 0.9)
+    elif len(scores) >= 5:
+        # Moderate results: use top 40%
+        top_40_percent_idx = max(1, len(scores) * 2 // 5)
+        distribution_threshold = scores[top_40_percent_idx]
+        base_threshold = max(base_threshold, distribution_threshold * 0.8)
+    else:
+        # Few results: be more lenient
+        if len(scores) >= 2:
+            base_threshold = min(base_threshold, scores[1] * 0.9)  # Allow top 2 results
+    
+    # Quality safeguards
+    # Don't go below 0.08 (very low quality) or above 0.4 (too restrictive)
+    final_threshold = max(0.08, min(0.4, base_threshold))
+    
+    # Special handling for very specific queries
+    query_lower = query.lower()
+    specific_terms = ['coupon', 'discount', 'deal', 'recipe', 'ikea', 'hack', 'diy', 'tutorial']
+    if any(term in query_lower for term in specific_terms):
+        # These are specific enough that we can be more lenient
+        final_threshold = min(final_threshold, 0.25)
+    
+    logger.info(f"Dynamic threshold calculation for '{query}':")
+    logger.info(f"  Query type: {'single-word' if is_single_word else 'multi-word'}, length: {query_length}")
+    logger.info(f"  Score stats: max={max_score:.3f}, avg={avg_score:.3f}, results={len(scores)}")
+    logger.info(f"  Base threshold: {base_threshold:.3f}, Final threshold: {final_threshold:.3f}")
+    
+    return final_threshold 
