@@ -20,7 +20,6 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useTheme } from '../contexts/ThemeContext';
 import { apiService, UserItem, SearchResult } from '../services/api';
 import { Theme } from '../config/theme';
-import LinkIcon from '../components/icons/LinkIcon';
 
 // Import the base URL constant
 const API_BASE_URL = 'https://memo-production-9d97.up.railway.app';
@@ -281,15 +280,7 @@ export const ChatScreen: React.FC = () => {
 
     return (
       <View style={[styles.messageBubble, styles.memoraMessageBubble, styles.searchResultBubble]}>
-        {previewImage ? (
-          <Image source={{ uri: previewImage }} style={styles.searchResultImage} />
-        ) : (
-          !result.file_path && result.media_type === 'url' && (
-            <View style={styles.searchResultImagePlaceholder}>
-              <LinkIcon color={theme.colors.textTertiary} width={40} height={40}/>
-            </View>
-          )
-        )}
+        {previewImage && <Image source={{ uri: previewImage }} style={styles.searchResultImage} />}
         <View style={styles.searchResultContent}>
           <Text style={[styles.memoraMessageText, styles.searchResultTitle]}>{result.title || 'Untitled Memory'}</Text>
           {result.media_type === 'text' && result.content_data ? (
@@ -458,13 +449,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     width: '100%',
     height: 150,
     backgroundColor: theme.colors.border,
-  },
-  searchResultImagePlaceholder: {
-    width: '100%',
-    height: 150,
-    backgroundColor: theme.colors.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   searchResultContent: {
     padding: 12,

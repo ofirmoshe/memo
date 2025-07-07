@@ -16,7 +16,6 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { apiService, UserItem } from '../services/api';
 import { Theme } from '../config/theme';
-import LinkIcon from '../components/icons/LinkIcon';
 
 const API_BASE_URL = 'https://memo-production-9d97.up.railway.app';
 const { width } = Dimensions.get('window');
@@ -197,15 +196,7 @@ export const BrowseScreen: React.FC = () => {
 
     return (
       <TouchableOpacity style={styles.itemContainer} onPress={() => openMemoryDetails(item)} key={item.id}>
-        {previewImage ? (
-          <Image source={{ uri: previewImage }} style={styles.itemImage} resizeMode="cover" />
-        ) : (
-          !item.file_path && item.media_type === 'url' && (
-            <View style={styles.itemImagePlaceholder}>
-              <LinkIcon color={theme.colors.textTertiary} width={40} height={40}/>
-            </View>
-          )
-        )}
+        {previewImage && <Image source={{ uri: previewImage }} style={styles.itemImage} resizeMode="cover" />}
         <View style={styles.cardContent}>
           <Text style={styles.cardTitle} numberOfLines={3}>{item.title || 'Untitled Memory'}</Text>
           {item.description && item.description !== item.title && (
@@ -313,13 +304,6 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   itemImage: {
     width: '100%',
     height: 120,
-  },
-  itemImagePlaceholder: {
-    width: '100%',
-    height: 120,
-    backgroundColor: theme.colors.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   cardContent: { padding: 12, flex: 1 },
   cardTitle: { fontSize: 14, fontWeight: '600', color: theme.colors.text, marginBottom: 4 },
