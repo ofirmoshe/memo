@@ -105,17 +105,25 @@ class ApiService {
   }
 
   // Upload a file
-  async uploadFile(file: any, userId: string, userContext: string | null): Promise<any> {
-    const response = await fetch(`${this.baseUrl}/upload-file`, {
-      method: 'POST',
-      body: file,
-    });
+  async uploadFile(formData: FormData, userId: string): Promise<UserItem> {
+    try {
+      formData.append('user_id', userId);
+      // For FormData, we must not set the 'Content-Type' header.
+      // The browser or client will set it automatically with the correct boundary.
+      const response = await fetch(`${this.baseUrl}/upload-file`, {
+        method: 'POST',
+        body: formData,
+      });
 
-    if (!response.ok) {
-      throw new Error(`File upload failed: ${response.status} ${response.statusText}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to upload file: ${errorText}`);
+      }
+      return response.json();
+    } catch (e) {
+      console.error("Error uploading file:", e);
+      throw e;
     }
-
-    return response.json();
   }
 
   // Get user items - GET /user/{user_id}/items
@@ -188,4 +196,7 @@ class ApiService {
   }
 }
 
-export const apiService = new ApiService(); 
+export const apiService = new ApiService(API_BASE_URL);
+
+// Add the new method to the exported service object
+(apiService as any).uploadFile = apiService.uploadFile.bind(apiService); 

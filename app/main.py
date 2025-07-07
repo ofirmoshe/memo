@@ -173,7 +173,8 @@ async def extract_and_save(request: ExtractRequest, db: Session = Depends(get_db
             "tags": item.tags,
             "content_type": item.content_type,
             "platform": item.platform,
-            "media_type": item.media_type
+            "media_type": item.media_type,
+            "content_data": { "image": content.get("image") } if content.get("image") else None
         }
         
     except Exception as e:
@@ -389,53 +390,45 @@ async def save_file(request: SaveFileRequest, db: Session = Depends(get_db)):
 
 @app.post("/search", response_model=List[MemoraItem])
 async def search_content(request: SearchRequest, db: Session = Depends(get_db)):
-    """Search for saved content."""
+    """Search for content in the database based on a query."""
     try:
-        logger.info(f"Searching for: {request.query} (user: {request.user_id})")
-        logger.info(f"Search parameters: top_k={request.top_k}, similarity_threshold={request.similarity_threshold}")
+        logger.info(f"Searching for '{request.query}' for user: {request.user_id}")
         
-        # First get results without threshold filtering
+        # Use the utility search function
         results = search_items(
             db=db,
             user_id=request.user_id,
             query=request.query,
             top_k=request.top_k,
-            content_type=request.content_type,
-            platform=request.platform,
-            media_type=request.media_type,
-            similarity_threshold=0.0  # Get all results first
+            similarity_threshold=request.similarity_threshold
         )
         
-        # Apply dynamic threshold if no explicit threshold was provided
-        if request.similarity_threshold == 0.0:
-            dynamic_threshold = determine_dynamic_threshold(request.query, results)
-            logger.info(f"Using dynamic threshold: {dynamic_threshold:.3f}")
-            results = [r for r in results if r.get('similarity_score', 0) >= dynamic_threshold]
-            
-            # If using fallback threshold (0.15), limit results to prevent noise
-            if dynamic_threshold <= 0.15:
-                # Only show top 5 results when using fallback threshold
-                results = results[:5]
-                logger.info(f"Limited fallback results to {len(results)} items")
-        else:
-            # Use explicit threshold
-            results = [r for r in results if r.get('similarity_score', 0) >= request.similarity_threshold]
+        # Format the results to match the Pydantic model, including all necessary fields
+        formatted_results = [
+            {
+                "id": str(item.id),
+                "user_id": item.user_id,
+                "url": item.url,
+                "title": item.title,
+                "description": item.description,
+                "tags": item.tags,
+                "timestamp": item.timestamp.isoformat(),
+                "content_type": item.content_type,
+                "platform": item.platform,
+                "media_type": item.media_type,
+                "content_data": item.content_data,
+                "file_path": item.file_path,
+                "similarity_score": score
+            }
+            for item, score in results
+        ]
         
-        # Log search results for debugging
-        logger.info(f"Search returned {len(results)} results")
-        if results:
-            top_scores = [f"{r.get('similarity_score', 0):.3f}" for r in results[:5]]
-            logger.info(f"Top 5 similarity scores: {top_scores}")
-            
-            # Log some sample results for debugging
-            for i, result in enumerate(results[:3]):
-                logger.info(f"Result {i+1}: title='{result.get('title', '')[:50]}...', score={result.get('similarity_score', 0):.3f}")
-        
-        return results
+        logger.info(f"Found {len(formatted_results)} results for query: '{request.query}'")
+        return formatted_results
         
     except Exception as e:
-        logger.error(f"Error searching for user {request.user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error performing search: {str(e)}")
+        logger.error(f"Error during search for query '{request.query}': {str(e)}")
+        raise HTTPException(status_code=500, detail="Search failed")
 
 @app.get("/user/{user_id}/stats")
 async def get_user_stats(user_id: str, db: Session = Depends(get_db)):

@@ -12,11 +12,15 @@ import {
   Alert,
   ActivityIndicator,
   Linking,
+  Image,
+  ActionSheetIOS,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { useTheme } from '../contexts/ThemeContext';
-import { Logo } from '../components/Logo';
 import { apiService, UserItem, SearchResult } from '../services/api';
 import { Theme } from '../config/theme';
+import LinkIcon from '../components/icons/LinkIcon';
 
 // Import the base URL constant
 const API_BASE_URL = 'https://memo-production-9d97.up.railway.app';
@@ -72,6 +76,14 @@ export const ChatScreen: React.FC = () => {
     setIsLoading(true);
     const removeProcessingMessage = addProcessingMessage();
 
+    // A helper to format the success message
+    const formatSuccessMessage = (item: UserItem) => {
+      const title = `✅ Saved: ${item.title || 'Untitled'}`;
+      const description = item.description ? `\n\n📝 ${item.description.substring(0, 100)}...` : '';
+      const tags = item.tags && item.tags.length > 0 ? `\n🏷️ Tags: ${item.tags.join(', ')}` : '';
+      return `${title}${description}${tags}`;
+    }
+
     try {
       // URL Check First
       if (/https?:\/\//.test(messageText)) {
@@ -79,7 +91,8 @@ export const ChatScreen: React.FC = () => {
         if (url) {
           const result = await apiService.extractUrl(url, USER_ID, userContext || null);
           removeProcessingMessage();
-          addMessage({ sender: 'memora', text: `✅ Saved: ${result.title || url}`, itemId: result.id, type: 'text' });
+          const successText = formatSuccessMessage(result);
+          addMessage({ sender: 'memora', text: successText, itemId: result.id, type: 'text' });
         }
         return;
       }
@@ -102,7 +115,8 @@ export const ChatScreen: React.FC = () => {
       } else if (intent === 'save') {
         const result = await apiService.saveText(messageText, USER_ID);
         removeProcessingMessage();
-        addMessage({ sender: 'memora', text: `✅ Saved: ${result.title}`, itemId: result.id, type: 'text' });
+        const successText = formatSuccessMessage(result);
+        addMessage({ sender: 'memora', text: successText, itemId: result.id, type: 'text' });
       } else { // greeting or general
         removeProcessingMessage();
         addMessage({ sender: 'memora', text: answer || "Hello! How can I help you?", type: 'text' });
@@ -116,16 +130,106 @@ export const ChatScreen: React.FC = () => {
     }
   };
 
-  const handleDeleteMessage = (message: Message) => {
-    if (!message.itemId) return;
+  const getAssetName = (asset: ImagePicker.ImagePickerAsset | DocumentPicker.DocumentPickerAsset): string => {
+    if ('fileName' in asset && asset.fileName) {
+      return asset.fileName;
+    }
+    if ('name' in asset && asset.name) {
+      return asset.name;
+    }
+    return 'upload.tmp'
+  }
+
+  const handleUploadPress = () => {
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        options: ['Cancel', 'Choose from Library', 'Choose Document'],
+        cancelButtonIndex: 0,
+      },
+      (buttonIndex) => {
+        if (buttonIndex === 1) {
+          handleUpload('image');
+        } else if (buttonIndex === 2) {
+          handleUpload('document');
+        }
+      }
+    );
+  }
+
+  const handleUpload = async (type: 'image' | 'document') => {
+    let result: ImagePicker.ImagePickerResult | DocumentPicker.DocumentPickerResult | null = null;
+    
+    if (type === 'image') {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert("Permission needed", "You need to allow access to your photos to upload images.");
+        return;
+      }
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        quality: 0.8,
+      });
+    } else {
+      result = await DocumentPicker.getDocumentAsync();
+    }
+    
+    if (result.canceled || !result.assets) {
+      return;
+    }
+
+    const asset = result.assets[0];
+    const fileName = getAssetName(asset);
+
+    const formData = new FormData();
+    formData.append('user_id', USER_ID);
+    // The 'file' key must match the backend FastAPI endpoint parameter name
+    formData.append('file', {
+      uri: asset.uri,
+      name: fileName,
+      type: asset.mimeType || 'application/octet-stream',
+    } as any);
+
+    setIsLoading(true);
+    addMessage({ text: `Uploading ${fileName}...`, sender: 'memora', type: 'text' });
+    
+    // A helper to format the success message
+    const formatSuccessMessage = (item: UserItem) => {
+      const title = `✅ Saved: ${item.title || 'Untitled'}`;
+      const description = item.description ? `\n\n📝 ${item.description.substring(0, 100)}...` : '';
+      const tags = item.tags && item.tags.length > 0 ? `\n🏷️ Tags: ${item.tags.join(', ')}` : '';
+      return `${title}${description}${tags}`;
+    }
+    
+    try {
+      const uploadResult = await apiService.uploadFile(formData, USER_ID);
+      setMessages(prev => prev.slice(0, prev.length -1)); // remove uploading message
+      const successText = formatSuccessMessage(uploadResult);
+      addMessage({ sender: 'memora', text: successText, itemId: uploadResult.id, type: 'text' });
+    } catch (error: any) {
+      setMessages(prev => prev.slice(0, prev.length -1)); // remove uploading message
+      Alert.alert('Upload Failed', error.message || 'Could not upload the file.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteMemory = async (itemId: string) => {
     Alert.alert('Delete Memory', 'Are you sure you want to permanently delete this memory?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete', style: 'destructive',
         onPress: async () => {
           try {
-            await apiService.deleteItem(message.itemId!, USER_ID);
-            setMessages(prev => prev.map(m => m.id === message.id ? { ...m, isDeleted: true, text: '🗑️ Memory deleted.' } : m));
+            await apiService.deleteItem(itemId, USER_ID);
+            setMessages(prev => 
+              prev.map(m => {
+                if (m.itemId === itemId || m.searchResult?.id === itemId) {
+                  return { ...m, isDeleted: true, text: '🗑️ Memory deleted.', type: 'text' };
+                }
+                return m;
+              })
+            );
           } catch (error) {
             Alert.alert('Error', 'Could not delete the memory.');
           }
@@ -154,22 +258,59 @@ export const ChatScreen: React.FC = () => {
     return response;
   };
 
+  const getPreviewImageUrl = (item: SearchResult | UserItem): string | null => {
+    // For uploaded images, construct the direct file URL
+    if (item.media_type === 'image' && item.file_path) {
+      return `${API_BASE_URL}/file/${item.id}?user_id=${USER_ID}`;
+    }
+    // For extracted URLs, use the image from content_data
+    if (item.media_type === 'url' && item.content_data?.image) {
+      return item.content_data.image;
+    }
+    // Fallback for youtube links
+    if (item.url?.includes('youtube.com') || item.url?.includes('youtu.be')) {
+      const videoId = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/.exec(item.url)?.[1];
+      if (videoId) return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+    }
+    return null;
+  };
+
   const SearchResultMessage = ({ result }: { result: SearchResult }) => {
     const styles = getStyles(theme);
+    const previewImage = getPreviewImageUrl(result);
+
     return (
       <View style={[styles.messageBubble, styles.memoraMessageBubble, styles.searchResultBubble]}>
-        <Text style={[styles.memoraMessageText, styles.searchResultTitle]}>{result.title || 'Untitled Memory'}</Text>
-        {result.description && (
-          <Text style={styles.memoraMessageText} numberOfLines={3}>{result.description}</Text>
+        {previewImage ? (
+          <Image source={{ uri: previewImage }} style={styles.searchResultImage} />
+        ) : (
+          !result.file_path && result.media_type === 'url' && (
+            <View style={styles.searchResultImagePlaceholder}>
+              <LinkIcon color={theme.colors.textTertiary} width={40} height={40}/>
+            </View>
+          )
         )}
-        {result.url && (
-          <TouchableOpacity onPress={() => Linking.openURL(result.url!)}>
-            <Text style={styles.searchResultUrl}>{result.url}</Text>
-          </TouchableOpacity>
-        )}
-        {result.similarity_score && (
-          <Text style={styles.searchResultRelevance}>Relevance: {(result.similarity_score * 100).toFixed(0)}%</Text>
-        )}
+        <View style={styles.searchResultContent}>
+          <Text style={[styles.memoraMessageText, styles.searchResultTitle]}>{result.title || 'Untitled Memory'}</Text>
+          {result.media_type === 'text' && result.content_data ? (
+            <Text style={styles.memoraMessageText}>{result.content_data}</Text>
+          ) : result.description && (
+            <Text style={styles.memoraMessageText} numberOfLines={3}>{result.description}</Text>
+          )}
+          {result.url && (
+            <TouchableOpacity onPress={() => Linking.openURL(result.url!)}>
+              <Text style={styles.searchResultUrl} numberOfLines={1}>{result.url}</Text>
+            </TouchableOpacity>
+          )}
+          <View style={styles.searchResultFooter}>
+            {result.similarity_score && (
+              <Text style={styles.searchResultRelevance}>Relevance: {(result.similarity_score * 100).toFixed(0)}%</Text>
+            )}
+            <TouchableOpacity onPress={() => handleDeleteMemory(result.id)} style={styles.deleteButton}>
+              <Text style={styles.deleteButtonText}>Delete</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
     );
   }
@@ -178,9 +319,11 @@ export const ChatScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={80}>
+      <KeyboardAvoidingView 
+        style={styles.flex} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
         <View style={styles.header}>
-          <Logo size={28} color={theme.colors.text} />
           <Text style={styles.headerTitle}>Memora</Text>
         </View>
         <ScrollView 
@@ -199,7 +342,7 @@ export const ChatScreen: React.FC = () => {
                 <View style={[styles.messageBubble, msg.sender === 'user' ? styles.userMessageBubble : styles.memoraMessageBubble]}>
                   <Text style={msg.sender === 'user' ? styles.userMessageText : styles.memoraMessageText}>{msg.text}</Text>
                   {msg.sender === 'memora' && msg.itemId && !msg.isDeleted && (
-                    <TouchableOpacity onPress={() => handleDeleteMessage(msg)} style={styles.deleteButton}>
+                    <TouchableOpacity onPress={() => handleDeleteMemory(msg.itemId!)} style={styles.deleteButton}>
                       <Text style={styles.deleteButtonText}>Delete</Text>
                     </TouchableOpacity>
                   )}
@@ -209,6 +352,9 @@ export const ChatScreen: React.FC = () => {
           ))}
         </ScrollView>
         <View style={styles.inputWrapper}>
+          <TouchableOpacity style={styles.uploadButton} onPress={handleUploadPress}>
+            <Text style={styles.uploadButtonText}>+</Text>
+          </TouchableOpacity>
           <TextInput 
             style={styles.textInput} 
             value={inputText} 
@@ -265,6 +411,20 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     borderTopWidth: 1, 
     borderTopColor: theme.colors.border 
   },
+  uploadButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  uploadButtonText: {
+    color: theme.colors.text,
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
   textInput: { 
     flex: 1, 
     backgroundColor: theme.colors.surface, 
@@ -291,19 +451,42 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   },
   searchResultBubble: {
     width: '100%',
+    padding: 0,
+    overflow: 'hidden',
+  },
+  searchResultImage: {
+    width: '100%',
+    height: 150,
+    backgroundColor: theme.colors.border,
+  },
+  searchResultImagePlaceholder: {
+    width: '100%',
+    height: 150,
+    backgroundColor: theme.colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  searchResultContent: {
+    padding: 12,
   },
   searchResultTitle: {
     fontWeight: 'bold',
     marginBottom: 4,
   },
   searchResultUrl: {
-    color: theme.colors.primary,
+    color: theme.colors.textTertiary,
     textDecorationLine: 'underline',
     marginTop: 4,
+    fontSize: 12,
+  },
+  searchResultFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
   },
   searchResultRelevance: {
     fontSize: 12,
     color: theme.colors.textTertiary,
-    marginTop: 8,
   }
 }); 

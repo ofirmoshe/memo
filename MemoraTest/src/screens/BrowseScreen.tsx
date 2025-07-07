@@ -16,7 +16,9 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { apiService, UserItem } from '../services/api';
 import { Theme } from '../config/theme';
+import LinkIcon from '../components/icons/LinkIcon';
 
+const API_BASE_URL = 'https://memo-production-9d97.up.railway.app';
 const { width } = Dimensions.get('window');
 const PADDING = 16;
 const ITEM_WIDTH = (width - (PADDING * 3)) / 2;
@@ -134,11 +136,18 @@ export const BrowseScreen: React.FC = () => {
     );
   };
   
-  const getPreviewImage = (memory: UserItem): string | null => {
-    if (memory.content_data && memory.content_data.image) return memory.content_data.image;
-    if (memory.media_type === 'image' && memory.url) return memory.url;
-    if (memory.url?.includes('youtube.com') || memory.url?.includes('youtu.be')) {
-      const videoId = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/.exec(memory.url)?.[1];
+  const getPreviewImageUrl = (item: UserItem): string | null => {
+    // For uploaded images, construct the direct file URL
+    if (item.media_type === 'image' && item.file_path) {
+      return `${API_BASE_URL}/file/${item.id}?user_id=${USER_ID}`;
+    }
+    // For extracted URLs, use the image from content_data
+    if (item.media_type === 'url' && item.content_data?.image) {
+      return item.content_data.image;
+    }
+    // Fallback for youtube links
+    if (item.url?.includes('youtube.com') || item.url?.includes('youtu.be')) {
+      const videoId = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/.exec(item.url)?.[1];
       if (videoId) return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
     }
     return null;
@@ -183,6 +192,37 @@ export const BrowseScreen: React.FC = () => {
     );
   };
 
+  const renderItem = ({ item }: { item: UserItem }) => {
+    const previewImage = getPreviewImageUrl(item);
+
+    return (
+      <TouchableOpacity style={styles.itemContainer} onPress={() => openMemoryDetails(item)} key={item.id}>
+        {previewImage ? (
+          <Image source={{ uri: previewImage }} style={styles.itemImage} resizeMode="cover" />
+        ) : (
+          !item.file_path && item.media_type === 'url' && (
+            <View style={styles.itemImagePlaceholder}>
+              <LinkIcon color={theme.colors.textTertiary} width={40} height={40}/>
+            </View>
+          )
+        )}
+        <View style={styles.cardContent}>
+          <Text style={styles.cardTitle} numberOfLines={3}>{item.title || 'Untitled Memory'}</Text>
+          {item.description && item.description !== item.title && (
+            <Text style={styles.cardDescription} numberOfLines={2}>{item.description}</Text>
+          )}
+          <View style={styles.cardFooter}>
+            <View style={styles.tagsContainer}>
+              {item.tags?.slice(0, 2).map((tag, i) => <View key={i} style={styles.tag}><Text style={styles.tagText}>{tag}</Text></View>)}
+              {item.tags && item.tags.length > 2 && <Text style={styles.moreTagsText}>+{item.tags.length - 2}</Text>}
+            </View>
+            <Text style={styles.timestamp}>{formatTimestamp(item.timestamp)}</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -205,27 +245,7 @@ export const BrowseScreen: React.FC = () => {
       >
         {filteredMemories.length > 0 ? (
           <View style={styles.grid}>
-            {filteredMemories.map((memory) => {
-              const previewImage = getPreviewImage(memory);
-              return (
-                <TouchableOpacity key={memory.id} style={styles.memoryCard} onPress={() => openMemoryDetails(memory)} onLongPress={() => handleDeleteMemory(memory)}>
-                  {previewImage && <Image source={{ uri: previewImage }} style={styles.previewImage} resizeMode="cover" />}
-                  <View style={styles.cardContent}>
-                    <Text style={styles.cardTitle} numberOfLines={3}>{memory.title || 'Untitled Memory'}</Text>
-                    {memory.description && memory.description !== memory.title && (
-                      <Text style={styles.cardDescription} numberOfLines={2}>{memory.description}</Text>
-                    )}
-                    <View style={styles.cardFooter}>
-                      <View style={styles.tagsContainer}>
-                        {memory.tags?.slice(0, 2).map((tag, i) => <View key={i} style={styles.tag}><Text style={styles.tagText}>{tag}</Text></View>)}
-                        {memory.tags && memory.tags.length > 2 && <Text style={styles.moreTagsText}>+{memory.tags.length - 2}</Text>}
-                      </View>
-                      <Text style={styles.timestamp}>{formatTimestamp(memory.timestamp)}</Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
+            {filteredMemories.map((memory) => renderItem({ item: memory }))}
           </View>
         ) : (
           <View style={styles.emptyState}>
@@ -244,7 +264,7 @@ export const BrowseScreen: React.FC = () => {
               <TouchableOpacity onPress={() => handleDeleteMemory(selectedMemory)} style={styles.modalButton}><Text style={[styles.modalButtonText, { color: theme.colors.error }]}>Delete</Text></TouchableOpacity>
             </View>
             <ScrollView style={styles.modalContent}>
-              {getPreviewImage(selectedMemory) && <Image source={{ uri: getPreviewImage(selectedMemory)! }} style={styles.modalPreviewImage} resizeMode="contain" />}
+              {getPreviewImageUrl(selectedMemory) && <Image source={{ uri: getPreviewImageUrl(selectedMemory)! }} style={styles.modalPreviewImage} resizeMode="contain" />}
               <Text style={styles.modalMemoryTitle}>{selectedMemory.title || 'Untitled'}</Text>
               {selectedMemory.url && <Text style={styles.modalUrl}>{selectedMemory.url}</Text>}
               {selectedMemory.description && <Text style={styles.modalDescription}>{selectedMemory.description}</Text>}
@@ -281,8 +301,26 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   },
   memoriesContent: { paddingHorizontal: PADDING, paddingBottom: 32 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  memoryCard: { width: ITEM_WIDTH, backgroundColor: theme.colors.card, borderRadius: 12, marginBottom: PADDING, overflow: 'hidden', ...theme.shadows.sm },
-  previewImage: { width: '100%', height: 110, backgroundColor: theme.colors.surface },
+  itemContainer: {
+    width: ITEM_WIDTH,
+    marginBottom: PADDING,
+    backgroundColor: theme.colors.card,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  itemImage: {
+    width: '100%',
+    height: 120,
+  },
+  itemImagePlaceholder: {
+    width: '100%',
+    height: 120,
+    backgroundColor: theme.colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   cardContent: { padding: 12, flex: 1 },
   cardTitle: { fontSize: 14, fontWeight: '600', color: theme.colors.text, marginBottom: 4 },
   cardDescription: { fontSize: 12, color: theme.colors.textSecondary, marginBottom: 8, lineHeight: 16 },
