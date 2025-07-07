@@ -10,6 +10,7 @@ import psutil
 from datetime import datetime
 from sqlalchemy.orm import Session
 from collections import Counter
+from pydantic import BaseModel
 
 # Configure logging first
 logging.basicConfig(
@@ -83,7 +84,20 @@ async def startup_event():
 # Initialize file processor
 file_processor = FileProcessor()
 
+class IntentRequest(BaseModel):
+    text: str
+
 # API endpoints
+@app.post("/intent")
+async def get_intent(request: IntentRequest):
+    """Detect intent from text using LLM."""
+    try:
+        result = detect_intent_and_translate(request.text)
+        return result
+    except Exception as e:
+        logger.error(f"Error getting intent for text '{request.text[:50]}...': {str(e)}")
+        raise HTTPException(status_code=500, detail="Error processing intent")
+
 @app.post("/extract")
 async def extract_and_save(request: ExtractRequest, db: Session = Depends(get_db)):
     """Extract content from URL and save it to the database."""
