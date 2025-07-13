@@ -220,26 +220,26 @@ def determine_dynamic_threshold(query: str, results: List[Dict[str, Any]]) -> fl
         second_score = scores[1]
         
         # Check if there's a clear winner with high relevance
-        is_high_relevance = top_score >= 0.5  # High relevance threshold
-        significant_gap = (top_score - second_score) >= 0.2  # Significant gap
+        is_high_relevance = top_score >= 0.6  # Increased from 0.5 to be less aggressive
+        significant_gap = (top_score - second_score) >= 0.25  # Increased from 0.2 to be more selective
         
         # Alternative check: top result is much better than average of rest
         if len(scores) >= 3:
             avg_rest = sum(scores[1:]) / len(scores[1:])
-            large_gap_vs_average = (top_score - avg_rest) >= 0.25
+            large_gap_vs_average = (top_score - avg_rest) >= 0.3  # Increased from 0.25
         else:
             large_gap_vs_average = False
         
-        # If there's a clear winner, be more selective
+        # If there's a clear winner, be more selective but not too aggressive
         if is_high_relevance and (significant_gap or large_gap_vs_average):
             # Increase threshold to be more selective, but ensure the top result qualifies
             if is_short_query:
-                adjusted_threshold = min(0.35, top_score * 0.7)  # More selective for short queries
+                adjusted_threshold = min(0.3, top_score * 0.6)  # Less aggressive: 0.6 instead of 0.7
             else:
-                adjusted_threshold = min(0.45, top_score * 0.75)  # Even more selective for long queries
+                adjusted_threshold = min(0.4, top_score * 0.65)  # Less aggressive: 0.65 instead of 0.75
             
             # Ensure the adjusted threshold doesn't exclude the clear winner
-            adjusted_threshold = min(adjusted_threshold, top_score - 0.05)  # Leave some margin
+            adjusted_threshold = min(adjusted_threshold, top_score - 0.1)  # Larger margin: 0.1 instead of 0.05
             
             logger.info(f"Clear winner detected - Top: {top_score:.3f}, Second: {second_score:.3f}, Gap: {top_score - second_score:.3f}")
             logger.info(f"Increasing threshold from {primary_threshold:.3f} to {adjusted_threshold:.3f} to be more selective")
