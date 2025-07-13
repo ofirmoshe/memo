@@ -180,7 +180,8 @@ def determine_dynamic_threshold(query: str, results: List[Dict[str, Any]]) -> fl
     1. For short queries (1-2 words), be more lenient with thresholds
     2. For longer queries, maintain higher quality standards
     3. Detect when there's a clear winner with high relevance - increase threshold
-    4. Always ensure we show at least some results if they exist
+    4. For specific queries, detect when first result is good but rest are poor
+    5. Always ensure we show at least some results if they exist
     
     Args:
         query: The search query
@@ -201,6 +202,7 @@ def determine_dynamic_threshold(query: str, results: List[Dict[str, Any]]) -> fl
     query_words = query.strip().split()
     query_length = len(query_words)
     is_short_query = query_length <= 2
+    is_specific_query = query_length >= 4  # Longer queries are more specific
     
     # Define base thresholds based on query type
     if is_short_query:
@@ -213,6 +215,24 @@ def determine_dynamic_threshold(query: str, results: List[Dict[str, Any]]) -> fl
         primary_threshold = 0.35
         secondary_threshold = 0.20  # Slightly higher fallback for longer queries
         min_results_needed = 2      # Need at least 2 good results
+    
+    # NEW: For specific queries, detect when first result is decent but rest are poor
+    if is_specific_query and len(scores) >= 3:
+        top_score = scores[0]
+        second_score = scores[1]
+        third_score = scores[2]
+        
+        # If first result is decent (≥0.4) but there's a big drop to mediocre results
+        if (top_score >= 0.4 and 
+            second_score < 0.35 and 
+            third_score < 0.32 and
+            (top_score - second_score) >= 0.12):
+            
+            # Use a threshold that keeps the good result(s) but filters noise
+            adaptive_threshold = max(0.32, second_score + 0.03)
+            logger.info(f"Specific query with quality drop detected - Top: {top_score:.3f}, Second: {second_score:.3f}")
+            logger.info(f"Using adaptive threshold: {adaptive_threshold:.3f} to filter noise")
+            return adaptive_threshold
     
     # NEW: Detect "clear winner" scenarios - high relevance with significant gap
     if len(scores) >= 2:
