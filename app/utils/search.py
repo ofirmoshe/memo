@@ -179,7 +179,8 @@ def determine_dynamic_threshold(query: str, results: List[Dict[str, Any]]) -> fl
     Strategy:
     1. For short queries (1-2 words), be more lenient with thresholds
     2. For longer queries, maintain higher quality standards
-    3. Always ensure we show at least some results if they exist
+    3. Detect when there's a clear winner with high relevance - increase threshold
+    4. Always ensure we show at least some results if they exist
     
     Args:
         query: The search query
@@ -201,7 +202,7 @@ def determine_dynamic_threshold(query: str, results: List[Dict[str, Any]]) -> fl
     query_length = len(query_words)
     is_short_query = query_length <= 2
     
-    # Define thresholds based on query type
+    # Define base thresholds based on query type
     if is_short_query:
         # For short queries like "recipe", "decor", be more lenient
         primary_threshold = 0.25    # Lowered from 0.35
@@ -212,6 +213,36 @@ def determine_dynamic_threshold(query: str, results: List[Dict[str, Any]]) -> fl
         primary_threshold = 0.35
         secondary_threshold = 0.20  # Slightly higher fallback for longer queries
         min_results_needed = 2      # Need at least 2 good results
+    
+    # NEW: Detect "clear winner" scenarios - high relevance with significant gap
+    if len(scores) >= 2:
+        top_score = scores[0]
+        second_score = scores[1]
+        
+        # Check if there's a clear winner with high relevance
+        is_high_relevance = top_score >= 0.5  # High relevance threshold
+        significant_gap = (top_score - second_score) >= 0.2  # Significant gap
+        
+        # Alternative check: top result is much better than average of rest
+        if len(scores) >= 3:
+            avg_rest = sum(scores[1:]) / len(scores[1:])
+            large_gap_vs_average = (top_score - avg_rest) >= 0.25
+        else:
+            large_gap_vs_average = False
+        
+        # If there's a clear winner, be more selective
+        if is_high_relevance and (significant_gap or large_gap_vs_average):
+            # Increase threshold to be more selective
+            if is_short_query:
+                adjusted_threshold = min(0.35, top_score * 0.7)  # More selective for short queries
+            else:
+                adjusted_threshold = min(0.45, top_score * 0.75)  # Even more selective for long queries
+            
+            logger.info(f"Clear winner detected - Top: {top_score:.3f}, Second: {second_score:.3f}, Gap: {top_score - second_score:.3f}")
+            logger.info(f"Increasing threshold from {primary_threshold:.3f} to {adjusted_threshold:.3f} to be more selective")
+            
+            # Use the adjusted threshold as primary
+            primary_threshold = adjusted_threshold
     
     # Count results above thresholds
     high_quality_count = sum(1 for score in scores if score >= primary_threshold)
