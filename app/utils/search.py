@@ -232,17 +232,21 @@ def determine_dynamic_threshold(query: str, results: List[Dict[str, Any]]) -> fl
         
         # If there's a clear winner, be more selective
         if is_high_relevance and (significant_gap or large_gap_vs_average):
-            # Increase threshold to be more selective
+            # Increase threshold to be more selective, but ensure the top result qualifies
             if is_short_query:
                 adjusted_threshold = min(0.35, top_score * 0.7)  # More selective for short queries
             else:
                 adjusted_threshold = min(0.45, top_score * 0.75)  # Even more selective for long queries
             
+            # Ensure the adjusted threshold doesn't exclude the clear winner
+            adjusted_threshold = min(adjusted_threshold, top_score - 0.05)  # Leave some margin
+            
             logger.info(f"Clear winner detected - Top: {top_score:.3f}, Second: {second_score:.3f}, Gap: {top_score - second_score:.3f}")
             logger.info(f"Increasing threshold from {primary_threshold:.3f} to {adjusted_threshold:.3f} to be more selective")
             
-            # Use the adjusted threshold as primary
+            # Use the adjusted threshold as primary and ensure we have at least 1 result
             primary_threshold = adjusted_threshold
+            min_results_needed = 1  # At least show the clear winner
     
     # Count results above thresholds
     high_quality_count = sum(1 for score in scores if score >= primary_threshold)
