@@ -97,7 +97,7 @@ def search_by_embedding(db, user_id: str, query_embedding: List[float], top_k: i
 
 def search_by_keywords(db, user_id: str, keywords: List[str], top_k: int = 5) -> List[Dict[str, Any]]:
     """
-    Search for items by keywords.
+    Search for items by keywords with improved precision.
     
     Args:
         db: Database session
@@ -112,43 +112,71 @@ def search_by_keywords(db, user_id: str, keywords: List[str], top_k: int = 5) ->
     
     results = []
     for item in items:
-        # Calculate keyword match score (simple count of matching keywords)
+        # Calculate keyword match score with better precision
         score = 0
+        total_matches = 0
+        
         for keyword in keywords:
-            # Check in title
-            if keyword.lower() in item.title.lower():
-                score += 2  # Higher weight for title matches
+            keyword_lower = keyword.lower()
             
-            # Check in description
-            if keyword.lower() in item.description.lower():
-                score += 1
+            # Check in title (highest weight)
+            if keyword_lower in item.title.lower():
+                # Exact word match gets higher score than substring match
+                if f" {keyword_lower} " in f" {item.title.lower()} ":
+                    score += 3  # Exact word match in title
+                else:
+                    score += 2  # Substring match in title
+                total_matches += 1
             
-            # Check in tags
-            if any(keyword.lower() in tag.lower() for tag in item.tags):
-                score += 1.5  # Medium weight for tag matches
+            # Check in description (medium weight)
+            if keyword_lower in item.description.lower():
+                # Exact word match gets higher score than substring match
+                if f" {keyword_lower} " in f" {item.description.lower()} ":
+                    score += 2  # Exact word match in description
+                else:
+                    score += 1  # Substring match in description
+                total_matches += 1
+            
+            # Check in tags (high weight for exact matches)
+            if any(keyword_lower in tag.lower() for tag in item.tags):
+                # Exact tag match gets highest score
+                if any(keyword_lower == tag.lower() for tag in item.tags):
+                    score += 4  # Exact tag match
+                else:
+                    score += 2  # Partial tag match
+                total_matches += 1
+            
+            # Check in content_data if available (low weight)
+            if item.content_data and keyword_lower in item.content_data.lower():
+                if f" {keyword_lower} " in f" {item.content_data.lower()} ":
+                    score += 1  # Exact word match in content
+                else:
+                    score += 0.5  # Substring match in content
+                total_matches += 1
         
-        # Normalize score
+        # Calculate precision score: reward items that match more keywords
         if len(keywords) > 0:
-            score = score / len(keywords)
+            keyword_coverage = total_matches / len(keywords)  # Percentage of keywords matched
+            score = score * keyword_coverage  # Penalize items that match few keywords
         
-        results.append({
-            "id": item.id,
-            "user_id": item.user_id,
-            "url": item.url,
-            "title": item.title,
-            "description": item.description,
-            "tags": item.tags,
-            "timestamp": item.timestamp,
-            "content_type": item.content_type,
-            "platform": item.platform,
-            "media_type": item.media_type,
-            "content_data": item.content_data,
-            "file_path": item.file_path,
-            "file_size": item.file_size,
-            "mime_type": item.mime_type,
-            "user_context": item.user_context,
+            results.append({
+                "id": item.id,
+                "user_id": item.user_id,
+                "url": item.url,
+                "title": item.title,
+                "description": item.description,
+                "tags": item.tags,
+                "timestamp": item.timestamp,
+                "content_type": item.content_type,
+                "platform": item.platform,
+                "media_type": item.media_type,
+                "content_data": item.content_data,
+                "file_path": item.file_path,
+                "file_size": item.file_size,
+                "mime_type": item.mime_type,
+                "user_context": item.user_context,
             "similarity_score": score
-        })
+            })
     
     # Sort by score (descending)
     results.sort(key=lambda x: x["similarity_score"], reverse=True)
@@ -174,14 +202,16 @@ def extract_keywords(query: str) -> List[str]:
 
 def determine_dynamic_threshold(query: str, results: List[Dict[str, Any]]) -> float:
     """
-    Determine optimal similarity threshold based on query characteristics and result quality.
+    Determine optimal similarity threshold based on query characteristics and result quality distribution.
+    
+    This approach is distribution-based rather than using hardcoded thresholds, making it stable
+    across different search algorithm implementations.
     
     Strategy:
-    1. For short queries (1-2 words), be more lenient with thresholds
-    2. For longer queries, maintain higher quality standards
-    3. Detect when there's a clear winner with high relevance - increase threshold
-    4. For specific queries, detect when first result is good but rest are poor
-    5. Always ensure we show at least some results if they exist
+    1. Analyze the distribution of relevance scores
+    2. Detect quality gaps and natural breakpoints
+    3. Use statistical measures to determine optimal cutoff
+    4. Adapt based on query characteristics (short vs long queries)
     
     Args:
         query: The search query
@@ -196,104 +226,154 @@ def determine_dynamic_threshold(query: str, results: List[Dict[str, Any]]) -> fl
     # Extract and sort similarity scores
     scores = [r.get('similarity_score', 0) for r in results]
     scores.sort(reverse=True)
-    max_score = max(scores) if scores else 0
+    
+    if len(scores) == 1:
+        # Single result - show it if it's not completely irrelevant
+        return max(0.0, scores[0] - 0.01)
     
     # Analyze query characteristics
     query_words = query.strip().split()
     query_length = len(query_words)
     is_short_query = query_length <= 2
-    is_specific_query = query_length >= 4  # Longer queries are more specific
     
-    # Define base thresholds based on query type
+    # Calculate statistical measures of the distribution
+    max_score = scores[0]
+    min_score = scores[-1]
+    score_range = max_score - min_score
+    
+    # If all scores are very similar, use a lenient threshold
+    if score_range < 0.1:
+        return min_score
+    
+    # Calculate percentiles for distribution analysis
+    n = len(scores)
+    p75_idx = max(0, int(n * 0.25) - 1)  # Top 25%
+    p50_idx = max(0, int(n * 0.5) - 1)   # Top 50%
+    p25_idx = max(0, int(n * 0.75) - 1)  # Top 75%
+    
+    p75_score = scores[p75_idx]
+    p50_score = scores[p50_idx]
+    p25_score = scores[p25_idx]
+    
+    # Method 1: Look for natural gaps in the distribution
+    # Find the largest gap between consecutive scores
+    largest_gap = 0
+    gap_position = -1
+    
+    for i in range(len(scores) - 1):
+        gap = scores[i] - scores[i + 1]
+        if gap > largest_gap:
+            largest_gap = gap
+            gap_position = i
+    
+    # Method 2: Detect "clear winner" scenarios - but be more conservative
+    # When top result is significantly better than the rest
+    clear_winner_threshold = None
+    if len(scores) >= 3:
+        top_score = scores[0]
+        second_score = scores[1]
+        avg_rest = sum(scores[1:]) / len(scores[1:])
+        
+        # Check for significant separation from top result
+        gap_from_second = top_score - second_score
+        gap_from_avg = top_score - avg_rest
+        
+        # Use relative gaps instead of absolute values
+        relative_gap_second = gap_from_second / max(top_score, 0.01)
+        relative_gap_avg = gap_from_avg / max(top_score, 0.01)
+        
+        # Be more conservative: require larger relative gaps
+        if relative_gap_second > 0.5 or relative_gap_avg > 0.6:
+            # Set threshold to include top result(s) but exclude the gap
+            clear_winner_threshold = second_score + (gap_from_second * 0.5)
+            logger.info(f"Clear winner detected - Top: {top_score:.3f}, Gap: {gap_from_second:.3f} ({relative_gap_second:.1%})")
+    
+    # Method 3: Use statistical measures for different query types
     if is_short_query:
-        # For short queries like "recipe", "decor", be more lenient
-        primary_threshold = 0.25    # Lowered from 0.35
-        secondary_threshold = 0.15  # Fallback threshold
-        min_results_needed = 1      # Show results even if just 1 decent match
-    else:
-        # For longer queries, maintain higher standards
-        primary_threshold = 0.35
-        secondary_threshold = 0.20  # Slightly higher fallback for longer queries
-        min_results_needed = 2      # Need at least 2 good results
-    
-    # NEW: For specific queries, detect when first result is decent but rest are poor
-    if is_specific_query and len(scores) >= 3:
-        top_score = scores[0]
-        second_score = scores[1]
-        third_score = scores[2]
+        # For short queries, be more inclusive
+        # Use median as baseline, but don't exclude too much
+        base_threshold = p50_score
         
-        # If first result is decent (≥0.4) but there's a big drop to mediocre results
-        if (top_score >= 0.4 and 
-            second_score < 0.35 and 
-            third_score < 0.32 and
-            (top_score - second_score) >= 0.12):
-            
-            # Use a threshold that keeps the good result(s) but filters noise
-            adaptive_threshold = max(0.32, second_score + 0.03)
-            logger.info(f"Specific query with quality drop detected - Top: {top_score:.3f}, Second: {second_score:.3f}")
-            logger.info(f"Using adaptive threshold: {adaptive_threshold:.3f} to filter noise")
-            return adaptive_threshold
-    
-    # NEW: Detect "clear winner" scenarios - high relevance with significant gap
-    if len(scores) >= 2:
-        top_score = scores[0]
-        second_score = scores[1]
-        
-        # Check if there's a clear winner with high relevance
-        is_high_relevance = top_score >= 0.6  # Increased from 0.5 to be less aggressive
-        significant_gap = (top_score - second_score) >= 0.25  # Increased from 0.2 to be more selective
-        
-        # Alternative check: top result is much better than average of rest
-        if len(scores) >= 3:
-            avg_rest = sum(scores[1:]) / len(scores[1:])
-            large_gap_vs_average = (top_score - avg_rest) >= 0.3  # Increased from 0.25
+        # Adjust based on score distribution
+        if score_range > 0.3:
+            # Wide distribution - use 75th percentile
+            statistical_threshold = p75_score
         else:
-            large_gap_vs_average = False
-        
-        # If there's a clear winner, be more selective but not too aggressive
-        if is_high_relevance and (significant_gap or large_gap_vs_average):
-            # Increase threshold to be more selective, but ensure the top result qualifies
-            if is_short_query:
-                adjusted_threshold = min(0.3, top_score * 0.6)  # Less aggressive: 0.6 instead of 0.7
-            else:
-                adjusted_threshold = min(0.4, top_score * 0.65)  # Less aggressive: 0.65 instead of 0.75
-            
-            # Ensure the adjusted threshold doesn't exclude the clear winner
-            adjusted_threshold = min(adjusted_threshold, top_score - 0.1)  # Larger margin: 0.1 instead of 0.05
-            
-            logger.info(f"Clear winner detected - Top: {top_score:.3f}, Second: {second_score:.3f}, Gap: {top_score - second_score:.3f}")
-            logger.info(f"Increasing threshold from {primary_threshold:.3f} to {adjusted_threshold:.3f} to be more selective")
-            
-            # Use the adjusted threshold as primary and ensure we have at least 1 result
-            primary_threshold = adjusted_threshold
-            min_results_needed = 1  # At least show the clear winner
-    
-    # Count results above thresholds
-    high_quality_count = sum(1 for score in scores if score >= primary_threshold)
-    reasonable_count = sum(1 for score in scores if score >= secondary_threshold)
-    
-    # Decision logic
-    if high_quality_count >= min_results_needed:
-        final_threshold = primary_threshold
-        logger.info(f"Using primary threshold {primary_threshold:.3f} for {'short' if is_short_query else 'long'} query - found {high_quality_count} high-quality results")
-    
-    elif reasonable_count >= min_results_needed:
-        # Use secondary threshold
-        final_threshold = secondary_threshold
-        logger.info(f"Using secondary threshold {final_threshold:.3f} for {'short' if is_short_query else 'long'} query - found {reasonable_count} reasonable results")
-    
+            # Narrow distribution - be more lenient
+            statistical_threshold = p25_score
     else:
-        # Very poor results - but for short queries, be even more lenient
-        if is_short_query and max_score > 0.10:
-            final_threshold = 0.10  # Very lenient for short queries
-            logger.info(f"Using very lenient threshold {final_threshold:.3f} for short query - max score: {max_score:.3f}")
+        # For longer queries, be more selective
+        # Use 75th percentile as baseline
+        base_threshold = p75_score
+        
+        # Adjust based on distribution characteristics
+        if score_range > 0.4:
+            # Very wide distribution - be more selective
+            statistical_threshold = p75_score
         else:
-            # No good results found
-            final_threshold = 1.0  # Filter out all results
-            logger.info(f"All results are poor quality (max score: {max_score:.3f}) - filtering out all results")
+            # Moderate distribution - use median
+            statistical_threshold = p50_score
+    
+    # Method 4: Gap-based threshold - improved logic
+    gap_threshold = None
+    if largest_gap > 0.15 and gap_position < len(scores) * 0.7:  # Gap in top 70% of results
+        # Use the gap as a natural breakpoint, but be conservative
+        gap_threshold = scores[gap_position + 1] + (largest_gap * 0.1)  # Only 10% above the gap
+        logger.info(f"Significant gap detected at position {gap_position + 1}: {largest_gap:.3f}")
+    
+    # Combine all methods and choose the most appropriate threshold
+    candidate_thresholds = []
+    
+    # Add statistical threshold (always available)
+    candidate_thresholds.append(("statistical", statistical_threshold))
+    
+    # Add gap-based threshold if significant
+    if gap_threshold is not None:
+        candidate_thresholds.append(("gap", gap_threshold))
+    
+    # Add clear winner threshold if detected
+    if clear_winner_threshold is not None:
+        candidate_thresholds.append(("clear_winner", clear_winner_threshold))
+    
+    # Choose the best threshold - prioritize natural gaps over clear winners
+    if gap_threshold is not None and largest_gap > 0.2:
+        # Strong gap takes precedence
+        final_threshold = gap_threshold
+        method = "gap"
+    elif clear_winner_threshold is not None and len(scores) >= 5:
+        # Clear winner only for larger result sets
+        final_threshold = clear_winner_threshold
+        method = "clear_winner"
+    else:
+        # Use statistical threshold
+        final_threshold = statistical_threshold
+        method = "statistical"
+    
+    # Ensure we don't exclude everything
+    results_above_threshold = sum(1 for score in scores if score >= final_threshold)
+    
+    # Minimum results guarantee
+    min_results = 1 if is_short_query else 1
+    
+    if results_above_threshold < min_results:
+        # Fallback: ensure we show at least minimum results
+        if len(scores) >= min_results:
+            final_threshold = scores[min_results - 1]
+            method = "minimum_guarantee"
+        else:
+            final_threshold = min_score
+            method = "show_all"
+    
+    # Maximum results limit to prevent noise
+    max_results = 8 if is_short_query else 6
+    if results_above_threshold > max_results:
+        # Too many results - raise threshold
+        final_threshold = scores[max_results - 1]
+        method = "maximum_limit"
     
     # Log the decision
-    logger.info(f"Dynamic threshold for '{query}' (query_length: {query_length}): {final_threshold:.3f} (max_score: {max_score:.3f}, total_results: {len(scores)})")
+    logger.info(f"Dynamic threshold for '{query}' (query_length: {query_length}): {final_threshold:.3f}")
+    logger.info(f"Method: {method}, Score range: {min_score:.3f}-{max_score:.3f}, Results: {results_above_threshold}/{len(scores)}")
     
     return final_threshold
 
@@ -339,22 +419,27 @@ def search_content(user_id: str, query: str, top_k: int = 5, content_type: str =
                 **result,
                 "embedding_score": result["similarity_score"],
                 "keyword_score": 0.0,
-                "similarity_score": result["similarity_score"] * 0.7  # 70% weight for embedding similarity
+                "similarity_score": result["similarity_score"] * 0.6  # 60% weight for embedding similarity
             }
         
         # Add or update with keyword results
         for result in keyword_results:
             if result["id"] in results_map:
                 # Combine scores if item already in results
-                results_map[result["id"]]["keyword_score"] = result["similarity_score"]
-                results_map[result["id"]]["similarity_score"] += result["similarity_score"] * 0.3  # 30% weight for keyword matching
+                keyword_score = result["similarity_score"]
+                # Normalize keyword score to 0-1 range (assuming max keyword score is around 10)
+                normalized_keyword_score = min(keyword_score / 10.0, 1.0)
+                results_map[result["id"]]["keyword_score"] = normalized_keyword_score
+                results_map[result["id"]]["similarity_score"] += normalized_keyword_score * 0.4  # 40% weight for keyword matching
             else:
                 # Add new item with adjusted score
+                keyword_score = result["similarity_score"]
+                normalized_keyword_score = min(keyword_score / 10.0, 1.0)
                 results_map[result["id"]] = {
                     **result,
                     "embedding_score": 0.0,
-                    "keyword_score": result["similarity_score"],
-                    "similarity_score": result["similarity_score"] * 0.3  # 30% weight for keyword matching
+                    "keyword_score": normalized_keyword_score,
+                    "similarity_score": normalized_keyword_score * 0.4  # 40% weight for keyword matching
                 }
         
         # Convert map back to list
@@ -660,4 +745,4 @@ def search_items(db, user_id: str, query: str, top_k: int = 5, content_type: str
         
     except Exception as e:
         logger.error(f"Error searching items: {str(e)}")
-        raise 
+        raise

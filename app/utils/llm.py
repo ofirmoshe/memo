@@ -115,14 +115,19 @@ def analyze_image_with_llm(image_path: str, user_context: str = None) -> Dict[st
 
 Please provide a comprehensive analysis that would be useful for a personal knowledge management system.
 
+IMPORTANT LANGUAGE REQUIREMENT:
+- ALWAYS provide the title, description, and tags in English, regardless of any foreign language text in the image
+- If the image contains text in Chinese, Korean, Japanese, Arabic, or other languages, translate the key information to English
+- The summary should be in clear, natural English that is useful for searching and retrieval
+
 IMPORTANT: You must respond with ONLY valid JSON. Do not include any text before or after the JSON object.
 
 Format your response as a single JSON object:
 {{
     "extracted_text": "All text visible in the image",
     "image_description": "Description of what's shown in the image", 
-    "title": "Descriptive title for this content",
-    "description": "Comprehensive summary of the content",
+    "title": "Descriptive title for this content (in English)",
+    "description": "Comprehensive summary of the content (in English)",
     "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
     "content_type": "receipt/document/screenshot/photo/etc",
     "platform": "personal",
@@ -303,6 +308,7 @@ def analyze_content_with_llm(content: Dict[str, str]) -> Dict[str, Any]:
     1. A concise description (max 150 words) summarizing the main points of the content.
         - Your description should be as descriptive as possible, and should include the most important details of the content.
         - This description will be later used for natural language search, so it should be as detailed yet concise as possible, and should include the most important details of the content.
+        - IMPORTANT: Always provide the description in English, regardless of the source language. If the content is in a foreign language, translate the key information to English.
     2. A list of 3-7 relevant tags that categorize this content.
     
         - When generating tags, prioritize these standard categories if they apply:
@@ -312,6 +318,7 @@ def analyze_content_with_llm(content: Dict[str, str]) -> Dict[str, Any]:
     
         - Try to use the most specific tags possible.
         - Maximum 7 tags.
+        - IMPORTANT: Always provide tags in English, regardless of the source language.
         - If the content doesn't match any of these categories, create appropriate specific tags.
         - Each tag should be a single word or short phrase (1-3 words maximum).
     
@@ -408,7 +415,13 @@ Guidelines:
 - Focus on the most important and searchable aspects
 - Use tags that are specific and useful for retrieval
 - Consider the user's context when provided
-- For personal documents, be respectful of privacy"""
+- For personal documents, be respectful of privacy
+
+IMPORTANT LANGUAGE REQUIREMENT:
+- ALWAYS provide the title, description, and tags in English, regardless of the source language
+- If the content is in a foreign language (Chinese, Korean, Japanese, Arabic, etc.), translate the key information to English
+- The summary should be in clear, natural English that is useful for searching and retrieval
+- Tags should be in English and follow standard categorization practices"""
 
     # Add media-specific instructions
     if media_type == "text":
