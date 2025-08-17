@@ -1,4 +1,4 @@
-const API_BASE_URL = 'https://memo-production-9d97.up.railway.app';
+const API_BASE_URL = 'https://memora-production-da39.up.railway.app';
 
 export interface SearchResult {
   id: string;

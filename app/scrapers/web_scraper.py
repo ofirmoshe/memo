@@ -54,13 +54,43 @@ def scrape_website(url: str) -> Dict[str, Any]:
             paragraphs = soup.find_all("p")
             text = " ".join([p.get_text(strip=True) for p in paragraphs])
         
-        # Extract images
+        # Extract images with better filtering
         images = []
         img_tags = soup.find_all("img", src=True)
+        
+        # First try to find Open Graph image
+        og_image = soup.find("meta", {"property": "og:image"})
+        if og_image and og_image.get("content"):
+            og_img_url = og_image.get("content")
+            if og_img_url.startswith(("http://", "https://")):
+                images.append(og_img_url)
+        
+        # Then try Twitter card image
+        twitter_image = soup.find("meta", {"name": "twitter:image"})
+        if twitter_image and twitter_image.get("content"):
+            twitter_img_url = twitter_image.get("content")
+            if twitter_img_url.startswith(("http://", "https://")) and twitter_img_url not in images:
+                images.append(twitter_img_url)
+        
+        # Add other images, filtering out small/icon images
         for img in img_tags:
             src = img.get("src", "")
-            if src and src.startswith(("http://", "https://")):
-                images.append(src)
+            if src and src.startswith(("http://", "https://")) and src not in images:
+                # Skip likely icons/small images
+                if not any(skip in src.lower() for skip in ['icon', 'logo', 'favicon', 'avatar']):
+                    # Check image dimensions if available
+                    width = img.get("width")
+                    height = img.get("height")
+                    if width and height:
+                        try:
+                            w, h = int(width), int(height)
+                            # Only include images that are reasonably sized
+                            if w >= 200 and h >= 150:
+                                images.append(src)
+                        except ValueError:
+                            images.append(src)  # Include if we can't parse dimensions
+                    else:
+                        images.append(src)  # Include if no dimensions specified
         
         # Clean up text
         # Remove extra whitespace
@@ -70,7 +100,7 @@ def scrape_website(url: str) -> Dict[str, Any]:
             "title": title,
             "text": text,
             "meta_description": meta_description,
-            "images": images[:5],  # Limit to first 5 images
+            "images": images[:3],  # Limit to first 3 images for better performance
             "url": url
         }
     

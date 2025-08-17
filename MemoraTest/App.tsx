@@ -2,11 +2,12 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { AuthProvider } from './src/contexts/AuthContext';
+import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
 import { ChatScreen } from './src/screens/ChatScreen';
 import { BrowseScreen } from './src/screens/BrowseScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
+import { LoadingScreen } from './src/components/LoadingScreen';
 import { View, StyleSheet } from 'react-native';
 import { Path, Svg } from 'react-native-svg';
 
@@ -106,6 +107,20 @@ const AppNavigator = () => {
   );
 };
 
+const AppContent = () => {
+  const { isLoading } = useAuth();
+
+  if (isLoading) {
+    return <LoadingScreen message="Setting up your personal memory assistant..." />;
+  }
+
+  return (
+    <NavigationContainer>
+      <AppNavigator />
+    </NavigationContainer>
+  );
+};
+
 const styles = StyleSheet.create({
   iconContainer: {
     width: 40,
@@ -130,9 +145,7 @@ export default function App() {
     <SafeAreaProvider>
       <AuthProvider>
         <ThemeProvider>
-          <NavigationContainer>
-            <AppNavigator />
-          </NavigationContainer>
+          <AppContent />
         </ThemeProvider>
       </AuthProvider>
     </SafeAreaProvider>

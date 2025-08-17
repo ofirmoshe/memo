@@ -8,9 +8,11 @@ import {
   ActivityIndicator,
   Alert,
   Switch,
+  SafeAreaView,
 } from 'react-native';
 import { useTheme } from '../contexts/ThemeContext';
 import { apiService, UserStats as ApiUserStats } from '../services/api';
+import { Logo } from '../components/Logo';
 
 const USER_ID = '831447258';
 
@@ -70,100 +72,162 @@ export const ProfileScreen: React.FC = () => {
 
   if (isLoading) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: theme.colors.background }]}>
+      <SafeAreaView style={[styles.loadingContainer, { backgroundColor: theme.colors.background }]}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <View style={styles.header}>
-        <View style={[styles.avatar, { backgroundColor: theme.colors.surface }]}>
-          <Text style={[styles.avatarText, { color: theme.colors.text }]}>M</Text>
-        </View>
-        <Text style={[styles.userName, { color: theme.colors.text }]}>Memora User</Text>
-        <Text style={[styles.userHandle, { color: theme.colors.textTertiary }]}>ID: {USER_ID}</Text>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.userInfo}>
+          <Logo size={48} color={theme.colors.primary} />
+          <Text style={[styles.appName, { color: theme.colors.text }]}>Memora</Text>
+          <Text style={[styles.userDescription, { color: theme.colors.textSecondary }]}>
+            Your personal memory assistant
+          </Text>
       </View>
       
-      {stats && (
-        <>
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.textSecondary }]}>Overview</Text>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Statistics</Text>
             <View style={styles.statsGrid}>
-              <StatCard label="Total" value={stats.totalMemories} />
-              <StatCard label="Notes" value={stats.textNotes} />
-              <StatCard label="Links" value={stats.links} />
-              <StatCard label="Images" value={stats.images} />
+            <StatCard label="Total Memories" value={stats?.totalMemories || 0} />
+            <StatCard label="Text Notes" value={stats?.textNotes || 0} />
+            <StatCard label="Links" value={stats?.links || 0} />
+            <StatCard label="Images" value={stats?.images || 0} />
+            <StatCard label="Documents" value={stats?.documents || 0} />
             </View>
           </View>
           
-          {stats.topTags.length > 0 && (
+        {stats?.topTags && stats.topTags.length > 0 && (
             <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: theme.colors.textSecondary }]}>Top Tags</Text>
-              <View style={[styles.tagsContainer, { backgroundColor: theme.colors.surface }]}>
-                {stats.topTags.slice(0, 5).map((tag, index) => (
-                  <View key={index} style={[styles.tag, { borderBottomColor: theme.colors.border, borderBottomWidth: index === Math.min(stats.topTags.length, 5) - 1 ? 0 : 1 }]}>
-                    <Text style={[styles.tagText, { color: theme.colors.text }]}>{tag.tag}</Text>
-                    <Text style={[styles.tagCount, { color: theme.colors.textSecondary }]}>{tag.count}</Text>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Top Tags</Text>
+            <View style={styles.tagsContainer}>
+              {stats.topTags.slice(0, 10).map((tagData, index) => (
+                <View key={index} style={[styles.tagBadge, { backgroundColor: theme.colors.surface }]}>
+                  <Text style={[styles.tagText, { color: theme.colors.text }]}>{tagData.tag}</Text>
+                  <Text style={[styles.tagCount, { color: theme.colors.textSecondary }]}>{tagData.count}</Text>
                   </View>
                 ))}
               </View>
             </View>
-          )}
-        </>
       )}
 
       <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: theme.colors.textSecondary }]}>Preferences</Text>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Settings</Text>
         <View style={[styles.settingsContainer, { backgroundColor: theme.colors.surface }]}>
           <SettingsRow label="Dark Mode">
             <Switch
               value={isDarkMode}
               onValueChange={toggleTheme}
               trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
-              thumbColor={isDarkMode ? theme.colors.surface : '#f4f3f4'}
+                thumbColor={theme.colors.background}
             />
           </SettingsRow>
-          <SettingsRow label="Notifications">
-            <Switch disabled />
-          </SettingsRow>
-          <SettingsRow label="Language" isLast={true}>
-            <Text style={[styles.languageText, { color: theme.colors.textTertiary }]}>English</Text>
-          </SettingsRow>
+          </View>
         </View>
-      </View>
-
-      <TouchableOpacity style={styles.signOutButton}>
-        <Text style={[styles.signOutText, { color: theme.colors.error }]}>Sign Out</Text>
-      </TouchableOpacity>
     </ScrollView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  container: { flex: 1 },
-  header: { alignItems: 'center', paddingVertical: 32, paddingHorizontal: 16 },
-  avatar: { width: 100, height: 100, borderRadius: 50, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
-  avatarText: { fontSize: 48, fontWeight: '300' },
-  userName: { fontSize: 28, fontWeight: '600', marginBottom: 4 },
-  userHandle: { fontSize: 16, color: 'grey' },
-  section: { marginBottom: 24, paddingHorizontal: 16 },
-  sectionTitle: { fontSize: 14, fontWeight: '600', textTransform: 'uppercase', marginBottom: 12, letterSpacing: 0.5 },
-  statsGrid: { flexDirection: 'row', justifyContent: 'space-between' },
-  statCard: { width: '23%', alignItems: 'center', paddingVertical: 16, borderRadius: 12 },
-  statValue: { fontSize: 24, fontWeight: '700', marginBottom: 4 },
-  statLabel: { fontSize: 12, textTransform: 'uppercase', fontWeight: '500' },
-  tagsContainer: { borderRadius: 12, paddingHorizontal: 16 },
-  tag: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 14 },
-  tagText: { fontSize: 16, fontWeight: '500' },
-  tagCount: { fontSize: 16 },
-  settingsContainer: { borderRadius: 12, overflow: 'hidden' },
-  settingsRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 16 },
-  settingsLabel: { flex: 1, fontSize: 16, fontWeight: '500' },
-  settingsAction: {},
-  languageText: { fontSize: 16 },
-  signOutButton: { marginHorizontal: 16, borderRadius: 12, padding: 16, alignItems: 'center', marginBottom: 48, backgroundColor: '#1e1e1e' },
-  signOutText: { fontSize: 16, fontWeight: '600' },
+  container: {
+    flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  userInfo: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    marginBottom: 8,
+  },
+  section: {
+    marginVertical: 16,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 12,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  statCard: {
+    width: '48%',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  tagsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  tagBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  tagText: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginRight: 4,
+  },
+  tagCount: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  settingsContainer: {
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  settingsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  settingsLabel: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  settingsAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  appName: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  userDescription: {
+    fontSize: 16,
+    textAlign: 'center',
+  },
 });

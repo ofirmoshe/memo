@@ -20,6 +20,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useTheme } from '../contexts/ThemeContext';
 import { apiService, UserItem, SearchResult } from '../services/api';
 import { Theme } from '../config/theme';
+import { Logo } from '../components/Logo';
 
 // Import the base URL constant
 const API_BASE_URL = 'https://memo-production-9d97.up.railway.app';
@@ -32,7 +33,7 @@ interface Message {
   isDeleted?: boolean;
   itemId?: string;
   searchResult?: SearchResult;
-  type?: 'search_result' | 'text' | 'processing';
+  type?: 'search_result' | 'text' | 'processing' | 'welcome';
 }
 
 const USER_ID = '831447258';
@@ -42,10 +43,9 @@ export const ChatScreen: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome-1',
-      text: "Hello! I'm Memora. How can I help you remember or find something today?",
       sender: 'memora',
       timestamp: new Date(),
-      type: 'text',
+      type: 'welcome',
     },
   ]);
   const [inputText, setInputText] = useState('');
@@ -274,17 +274,73 @@ export const ChatScreen: React.FC = () => {
     return null;
   };
 
+  const WelcomeMessage = () => {
+    const styles = getStyles(theme);
+    return (
+      <View style={[styles.messageBubble, styles.memoraMessageBubble, styles.welcomeMessage]}>
+        <View style={styles.welcomeHeader}>
+          <Logo size={32} color={theme.colors.primary} />
+          <Text style={[styles.memoraMessageText, styles.welcomeTitle]}>Memora</Text>
+        </View>
+        <Text style={styles.memoraMessageText}>
+          Hello! I'm your personal memory assistant. How can I help you remember or find something today?
+        </Text>
+      </View>
+    );
+  };
+
+  const getPlaceholderIcon = (result: SearchResult): string => {
+    switch (result.media_type) {
+      case 'url': return '🔗';
+      case 'text': return '📝';
+      case 'document': return '📄';
+      case 'image': return '🖼️';
+      default: return '📋';
+    }
+  };
+
+  const getPlaceholderColor = (result: SearchResult): string => {
+    const colors = {
+      url: '#4A90E2',
+      text: '#7ED321', 
+      document: '#F5A623',
+      image: '#BD10E0',
+      default: '#9013FE'
+    };
+    return colors[result.media_type as keyof typeof colors] || colors.default;
+  };
+
   const SearchResultMessage = ({ result }: { result: SearchResult }) => {
     const styles = getStyles(theme);
     const previewImage = getPreviewImageUrl(result);
 
     return (
       <View style={[styles.messageBubble, styles.memoraMessageBubble, styles.searchResultBubble]}>
-        {previewImage && <Image source={{ uri: previewImage }} style={styles.searchResultImage} />}
+        {previewImage ? (
+          <Image 
+            source={{ uri: previewImage }} 
+            style={styles.searchResultImage}
+            onError={() => {
+              console.log('Search result image failed to load:', previewImage);
+            }}
+          />
+        ) : (
+          <View style={[styles.searchResultPlaceholder, { backgroundColor: getPlaceholderColor(result) + '20' }]}>
+            <Text style={[styles.searchResultPlaceholderIcon, { color: getPlaceholderColor(result) }]}>
+              {getPlaceholderIcon(result)}
+            </Text>
+            <Text style={styles.searchResultPlaceholderText} numberOfLines={1}>
+              {result.media_type === 'url' ? 'Link' : 
+               result.media_type === 'text' ? 'Note' :
+               result.media_type === 'document' ? 'Doc' :
+               result.media_type === 'image' ? 'Image' : 'Content'}
+            </Text>
+          </View>
+        )}
         <View style={styles.searchResultContent}>
           <Text style={[styles.memoraMessageText, styles.searchResultTitle]}>{result.title || 'Untitled Memory'}</Text>
           {result.media_type === 'text' && result.content_data ? (
-            <Text style={styles.memoraMessageText}>{result.content_data}</Text>
+            <Text style={styles.memoraMessageText} numberOfLines={3}>{result.content_data}</Text>
           ) : result.description && (
             <Text style={styles.memoraMessageText} numberOfLines={3}>{result.description}</Text>
           )}
@@ -314,9 +370,6 @@ export const ChatScreen: React.FC = () => {
         style={styles.flex} 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Memora</Text>
-        </View>
         <ScrollView 
           ref={scrollViewRef} 
           style={styles.messagesContainer} 
@@ -329,6 +382,8 @@ export const ChatScreen: React.FC = () => {
                 <SearchResultMessage result={msg.searchResult} />
               ) : msg.type === 'processing' ? (
                 <ActivityIndicator style={{alignSelf: 'flex-start', margin: 10}} color={theme.colors.textTertiary} />
+              ) : msg.type === 'welcome' ? (
+                <WelcomeMessage />
               ) : (
                 <View style={[styles.messageBubble, msg.sender === 'user' ? styles.userMessageBubble : styles.memoraMessageBubble]}>
                   <Text style={msg.sender === 'user' ? styles.userMessageText : styles.memoraMessageText}>{msg.text}</Text>
@@ -371,36 +426,76 @@ export const ChatScreen: React.FC = () => {
 };
 
 const getStyles = (theme: Theme) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.background },
-  flex: { flex: 1 },
-  header: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'center',
-    paddingVertical: 16,
-    borderBottomWidth: 1, 
-    borderBottomColor: theme.colors.border 
+  container: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
   },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: theme.colors.text },
-  messagesContainer: { flex: 1 },
-  messagesContent: { padding: 16 },
-  messageWrapper: { marginVertical: 4, maxWidth: '85%' },
-  userMessageWrapper: { alignSelf: 'flex-end' },
-  memoraMessageWrapper: { alignSelf: 'flex-start' },
-  messageBubble: { padding: 12, borderRadius: 18 },
-  userMessageBubble: { backgroundColor: theme.colors.primary, borderBottomRightRadius: 4 },
-  memoraMessageBubble: { backgroundColor: theme.colors.surface, borderBottomLeftRadius: 4 },
-  userMessageText: { fontSize: 16, color: theme.colors.background, lineHeight: 22 },
-  memoraMessageText: { fontSize: 16, color: theme.colors.text, lineHeight: 22 },
-  deleteButton: { marginTop: 8, paddingVertical: 4, paddingHorizontal: 8, backgroundColor: theme.colors.background, borderRadius: 6, alignSelf: 'flex-start', borderWidth: 1, borderColor: theme.colors.border },
-  deleteButtonText: { color: theme.colors.error, fontSize: 12, fontWeight: 'bold' },
+  flex: {
+    flex: 1,
+  },
+  messagesContainer: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  messagesContent: {
+    paddingTop: 16,
+    paddingBottom: 16,
+  },
+  messageWrapper: {
+    marginVertical: 4,
+  },
+  userMessageWrapper: {
+    alignItems: 'flex-end',
+  },
+  memoraMessageWrapper: {
+    alignItems: 'flex-start',
+  },
+  messageBubble: {
+    maxWidth: '80%',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 20,
+    marginVertical: 2,
+  },
+  userMessageBubble: {
+    backgroundColor: theme.colors.primary,
+    borderBottomRightRadius: 6,
+  },
+  memoraMessageBubble: {
+    backgroundColor: theme.colors.surface,
+    borderBottomLeftRadius: 6,
+  },
+  userMessageText: {
+    color: theme.colors.background,
+    fontSize: 16,
+    lineHeight: 20,
+  },
+  memoraMessageText: {
+    color: theme.colors.text,
+    fontSize: 16,
+    lineHeight: 20,
+  },
+  deleteButton: {
+    marginTop: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: theme.colors.error,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+  },
+  deleteButtonText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   inputWrapper: { 
     flexDirection: 'row', 
     alignItems: 'center', 
-    paddingHorizontal: 12, 
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: theme.colors.background,
     borderTopWidth: 1, 
-    borderTopColor: theme.colors.border 
+    borderTopColor: theme.colors.border,
   },
   uploadButton: {
     width: 40,
@@ -409,23 +504,24 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     backgroundColor: theme.colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
+    marginRight: 12,
   },
   uploadButtonText: {
-    color: theme.colors.text,
     fontSize: 24,
-    fontWeight: 'bold',
+    color: theme.colors.text,
+    fontWeight: '300',
   },
   textInput: { 
     flex: 1, 
+    minHeight: 40,
+    maxHeight: 120,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     backgroundColor: theme.colors.surface, 
-    borderRadius: 24, 
-    paddingHorizontal: 16, 
-    paddingVertical: Platform.OS === 'ios' ? 12 : 8, 
+    borderRadius: 20,
     fontSize: 16, 
     color: theme.colors.text, 
-    marginRight: 8,
-    maxHeight: 100,
+    textAlignVertical: 'top',
   },
   sendButton: { 
     width: 40, 
@@ -433,12 +529,12 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     borderRadius: 20, 
     backgroundColor: theme.colors.primary, 
     justifyContent: 'center', 
-    alignItems: 'center' 
+    alignItems: 'center',
+    marginLeft: 12,
   },
   sendButtonText: { 
-    fontSize: 24, 
+    fontSize: 20,
     fontWeight: 'bold',
-    lineHeight: 28,
   },
   searchResultBubble: {
     width: '100%',
@@ -449,6 +545,22 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     width: '100%',
     height: 150,
     backgroundColor: theme.colors.border,
+  },
+  searchResultPlaceholder: {
+    width: '100%',
+    height: 150,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: theme.colors.surface,
+  },
+  searchResultPlaceholderIcon: {
+    fontSize: 40,
+    marginBottom: 8,
+  },
+  searchResultPlaceholderText: {
+    fontSize: 14,
+    color: theme.colors.textTertiary,
+    fontWeight: '600',
   },
   searchResultContent: {
     padding: 12,
@@ -472,5 +584,18 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   searchResultRelevance: {
     fontSize: 12,
     color: theme.colors.textTertiary,
-  }
+  },
+  welcomeMessage: {
+    padding: 16,
+  },
+  welcomeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  welcomeTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginLeft: 12,
+  },
 }); 

@@ -146,6 +146,17 @@ async def extract_and_save(request: ExtractRequest, db: Session = Depends(get_db
         embedding_text = f"{analysis.get('title', '')} {analysis.get('description', '')} {request.user_context or ''}"
         embedding = generate_embedding(embedding_text)
         
+        # Prepare content_data with preview image
+        content_data_dict = {}
+        if content.get("images") and len(content["images"]) > 0:
+            # Store the first image as preview
+            content_data_dict["image"] = content["images"][0]
+            content_data_dict["all_images"] = content["images"]
+        
+        # Add other metadata
+        if content.get("meta_description"):
+            content_data_dict["meta_description"] = content["meta_description"]
+        
         # Create and save item
         item = Item(
             user_id=request.user_id,
@@ -157,6 +168,7 @@ async def extract_and_save(request: ExtractRequest, db: Session = Depends(get_db
             content_type=analysis.get("content_type"),
             platform=analysis.get("platform"),
             media_type="url",
+            content_data=content_data_dict if content_data_dict else None,
             user_context=request.user_context
         )
         
