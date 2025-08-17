@@ -50,8 +50,30 @@ export interface UserStats {
 class ApiService {
   private baseUrl: string;
 
-  constructor(baseUrl: string = API_BASE_URL) {
+  constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
+  }
+
+  // Helper method to safely parse content_data
+  private parseContentData(contentData: any): any {
+    if (!contentData) return null;
+    
+    // If it's already an object, return as is
+    if (typeof contentData === 'object') {
+      return contentData;
+    }
+    
+    // If it's a string, try to parse as JSON
+    if (typeof contentData === 'string') {
+      try {
+        return JSON.parse(contentData);
+      } catch (error) {
+        console.warn('Failed to parse content_data as JSON:', error);
+        return null;
+      }
+    }
+    
+    return null;
   }
 
   private async request<T>(
@@ -147,7 +169,7 @@ class ApiService {
     const data = await response.json();
     return data.map((item: any) => ({
       ...item,
-      content_data: item.content_data ? (typeof item.content_data === 'string' ? JSON.parse(item.content_data) : item.content_data) : null
+      content_data: this.parseContentData(item.content_data)
     }));
   }
 
@@ -160,7 +182,7 @@ class ApiService {
     const data = await response.json();
     return data.map((item: any) => ({
       ...item,
-      content_data: item.content_data ? (typeof item.content_data === 'string' ? JSON.parse(item.content_data) : item.content_data) : null
+      content_data: this.parseContentData(item.content_data)
     }));
   }
 
