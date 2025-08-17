@@ -168,7 +168,7 @@ async def extract_and_save(request: ExtractRequest, db: Session = Depends(get_db
             content_type=analysis.get("content_type"),
             platform=analysis.get("platform"),
             media_type="url",
-            content_data=content_data_dict if content_data_dict else None,
+            content_data=json.dumps(content_data_dict) if content_data_dict else None,
             user_context=request.user_context
         )
         

@@ -126,9 +126,42 @@ class ApiService {
     }
   }
 
+  // Search items - POST /search
+  async searchItems(userId: string, query: string): Promise<UserItem[]> {
+    const response = await fetch(`${this.baseUrl}/search`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        query: query,
+        top_k: 10
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    return data.map((item: any) => ({
+      ...item,
+      content_data: item.content_data ? (typeof item.content_data === 'string' ? JSON.parse(item.content_data) : item.content_data) : null
+    }));
+  }
+
   // Get user items - GET /user/{user_id}/items
   async getUserItems(userId: string): Promise<UserItem[]> {
-    return this.request<UserItem[]>(`/user/${userId}/items`);
+    const response = await fetch(`${this.baseUrl}/user/${userId}/items`);
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status}`);
+    }
+    const data = await response.json();
+    return data.map((item: any) => ({
+      ...item,
+      content_data: item.content_data ? (typeof item.content_data === 'string' ? JSON.parse(item.content_data) : item.content_data) : null
+    }));
   }
 
   // Get user stats - GET /user/{user_id}/stats

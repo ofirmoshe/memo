@@ -21,7 +21,7 @@ import { apiService, UserItem } from '../services/api';
 import { Theme } from '../config/theme';
 import { Logo } from '../components/Logo';
 
-const API_BASE_URL = 'https://memo-production-9d97.up.railway.app';
+const API_BASE_URL = 'https://memora-production-da39.up.railway.app';
 const { width } = Dimensions.get('window');
 const PADDING = 16;
 const ITEM_WIDTH = (width - (PADDING * 3)) / 2;
