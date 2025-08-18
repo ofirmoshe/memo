@@ -1,4 +1,4 @@
-const API_BASE_URL = 'https://memora-production-da39.up.railway.app';
+export const API_BASE_URL = 'https://memora-production-da39.up.railway.app';
 
 export interface SearchResult {
   id: string;
@@ -11,12 +11,17 @@ export interface SearchResult {
   content_type?: string;
   platform?: string;
   media_type?: string;
-  content_data?: any;
+  content_data?: any; // legacy, may be removed later
   file_path?: string;
   file_size?: number;
   mime_type?: string;
   user_context?: string;
   similarity_score?: number;
+  // New explicit fields
+  content_text?: string;
+  content_json?: Record<string, any> | null;
+  preview_image_url?: string | null;
+  preview_thumbnail_path?: string | null;
 }
 
 export interface UserItem {
@@ -30,12 +35,17 @@ export interface UserItem {
   content_type?: string;
   platform?: string;
   media_type?: string;
-  content_data?: any;
+  content_data?: any; // legacy, may be removed later
   file_path?: string;
   file_size?: number;
   mime_type?: string;
   user_context?: string;
   similarity_score?: number;
+  // New explicit fields
+  content_text?: string;
+  content_json?: Record<string, any> | null;
+  preview_image_url?: string | null;
+  preview_thumbnail_path?: string | null;
 }
 
 export interface UserStats {
@@ -57,13 +67,9 @@ class ApiService {
   // Helper method to safely parse content_data
   private parseContentData(contentData: any): any {
     if (!contentData) return null;
-    
-    // If it's already an object, return as is
     if (typeof contentData === 'object') {
       return contentData;
     }
-    
-    // If it's a string, try to parse as JSON
     if (typeof contentData === 'string') {
       try {
         return JSON.parse(contentData);
@@ -72,8 +78,14 @@ class ApiService {
         return null;
       }
     }
-    
     return null;
+  }
+
+  private mapItem<T extends SearchResult | UserItem>(raw: any): T {
+    return {
+      ...raw,
+      content_data: this.parseContentData(raw.content_data),
+    } as T;
   }
 
   private async request<T>(
@@ -81,7 +93,6 @@ class ApiService {
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
-    
     const response = await fetch(url, {
       headers: {
         'Content-Type': 'application/json',
@@ -89,17 +100,15 @@ class ApiService {
       },
       ...options,
     });
-
     if (!response.ok) {
       throw new Error(`API request failed: ${response.status} ${response.statusText}`);
     }
-
     return response.json();
   }
 
   // Search functionality - POST /search
   async search(query: string, userId: string): Promise<SearchResult[]> {
-    return this.request<SearchResult[]>(`/search`, {
+    const data = await this.request<SearchResult[]>(`/search`, {
       method: 'POST',
       body: JSON.stringify({
         query,
@@ -108,6 +117,7 @@ class ApiService {
         similarity_threshold: 0.0
       }),
     });
+    return data.map(d => this.mapItem<SearchResult>(d));
   }
 
   // Save a simple text note
@@ -130,13 +140,10 @@ class ApiService {
   async uploadFile(formData: FormData, userId: string): Promise<UserItem> {
     try {
       formData.append('user_id', userId);
-      // For FormData, we must not set the 'Content-Type' header.
-      // The browser or client will set it automatically with the correct boundary.
       const response = await fetch(`${this.baseUrl}/upload-file`, {
         method: 'POST',
         body: formData,
       });
-
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Failed to upload file: ${errorText}`);
@@ -152,25 +159,14 @@ class ApiService {
   async searchItems(userId: string, query: string): Promise<UserItem[]> {
     const response = await fetch(`${this.baseUrl}/search`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        user_id: userId,
-        query: query,
-        top_k: 10
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, query: query, top_k: 10 })
     });
-    
     if (!response.ok) {
       throw new Error(`API request failed: ${response.status}`);
     }
-    
     const data = await response.json();
-    return data.map((item: any) => ({
-      ...item,
-      content_data: this.parseContentData(item.content_data)
-    }));
+    return data.map((item: any) => this.mapItem<UserItem>(item));
   }
 
   // Get user items - GET /user/{user_id}/items
@@ -180,10 +176,7 @@ class ApiService {
       throw new Error(`API request failed: ${response.status}`);
     }
     const data = await response.json();
-    return data.map((item: any) => ({
-      ...item,
-      content_data: this.parseContentData(item.content_data)
-    }));
+    return data.map((item: any) => this.mapItem<UserItem>(item));
   }
 
   // Get user stats - GET /user/{user_id}/stats
@@ -211,33 +204,20 @@ class ApiService {
         method: 'POST',
         body: JSON.stringify({ text }),
       });
-      // The backend now handles this, so we can trust the response structure.
       return response as { intent: 'search' | 'save' | 'greeting' | 'general', english_text: string, answer: string };
     } catch (e) {
       console.error("Error calling /intent endpoint:", e);
-      // A more robust fallback in case of network error etc.
       return { intent: 'save', english_text: text, answer: '' };
     }
   }
 
   // Debug method to help discover available endpoints
   async debugEndpoints(userId: string): Promise<void> {
-    const endpointsToTest = [
-      '/health',
-      `/user/${userId}/items`,
-      `/user/${userId}/stats`
-    ];
-
+    const endpointsToTest = ['/health', `/user/${userId}/items`, `/user/${userId}/stats`];
     console.log('🔍 Testing backend endpoints...');
-    
     for (const endpoint of endpointsToTest) {
       try {
-        const response = await fetch(`${this.baseUrl}${endpoint}`, {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        });
-        
+        const response = await fetch(`${this.baseUrl}${endpoint}`, { headers: { 'Content-Type': 'application/json' } });
         if (response.ok) {
           const data = await response.json();
           console.log(`✅ ${endpoint} - Status: ${response.status}`, data);

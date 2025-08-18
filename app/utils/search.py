@@ -83,6 +83,10 @@ def search_by_embedding(db, user_id: str, query_embedding: List[float], top_k: i
                     "file_size": item.file_size,
                     "mime_type": item.mime_type,
                     "user_context": item.user_context,
+                    "content_text": getattr(item, 'content_text', None),
+                    "content_json": getattr(item, 'content_json', None),
+                    "preview_image_url": getattr(item, 'preview_image_url', None),
+                    "preview_thumbnail_path": getattr(item, 'preview_thumbnail_path', None),
                     "similarity_score": float(similarity)
                 })
             except Exception as e:
@@ -175,6 +179,10 @@ def search_by_keywords(db, user_id: str, keywords: List[str], top_k: int = 5) ->
                 "file_size": item.file_size,
                 "mime_type": item.mime_type,
                 "user_context": item.user_context,
+                "content_text": getattr(item, 'content_text', None),
+                "content_json": getattr(item, 'content_json', None),
+                "preview_image_url": getattr(item, 'preview_image_url', None),
+                "preview_thumbnail_path": getattr(item, 'preview_thumbnail_path', None),
             "similarity_score": score
             })
     
@@ -738,6 +746,10 @@ def search_items(db, user_id: str, query: str, top_k: int = 5, content_type: str
                 'file_size': item.file_size,
                 'mime_type': item.mime_type,
                 'user_context': item.user_context,
+                'content_text': getattr(item, 'content_text', None),
+                'content_json': getattr(item, 'content_json', None),
+                'preview_image_url': getattr(item, 'preview_image_url', None),
+                'preview_thumbnail_path': getattr(item, 'preview_thumbnail_path', None),
                 'similarity_score': result['similarity']
             })
         

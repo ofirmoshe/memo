@@ -69,17 +69,23 @@ class Item(Base):
     
     # New fields for multi-media support
     media_type = Column(String, index=True, nullable=False, default="url")  # url, text, image, document
-    content_data = Column(Text, nullable=True)  # For storing text content directly
+    content_data = Column(Text, nullable=True)  # For storing text content directly (legacy, to be deprecated)
     file_path = Column(String, nullable=True)  # Path to stored file (images, documents)
     file_size = Column(Integer, nullable=True)  # File size in bytes
     mime_type = Column(String, nullable=True)  # MIME type for files
     user_context = Column(Text, nullable=True)  # User-provided context/description
+    # New explicit fields replacing overloaded content_data
+    content_text = Column(Text, nullable=True)  # Raw textual content (notes, extracted doc/image text)
+    content_json = Column(JSON, nullable=True)  # Structured metadata from scrapers/analysis
+    preview_image_url = Column(String, nullable=True)  # Remote preview image URL (e.g., Open Graph)
+    preview_thumbnail_path = Column(String, nullable=True)  # Local thumbnail path for uploaded media
     
     user = relationship("User", back_populates="items")
     
     def __init__(self, user_id, url=None, title=None, description=None, tags=None, embedding=None, 
                  content_type=None, platform=None, media_type="url", content_data=None, 
-                 file_path=None, file_size=None, mime_type=None, user_context=None):
+                 file_path=None, file_size=None, mime_type=None, user_context=None,
+                 content_text=None, content_json=None, preview_image_url=None, preview_thumbnail_path=None):
         self.id = str(uuid.uuid4())
         self.user_id = user_id
         self.url = url
@@ -95,6 +101,10 @@ class Item(Base):
         self.file_size = file_size
         self.mime_type = mime_type
         self.user_context = user_context
+        self.content_text = content_text
+        self.content_json = content_json
+        self.preview_image_url = preview_image_url
+        self.preview_thumbnail_path = preview_thumbnail_path
 
 def init_db():
     """Initialize the database by creating all tables."""

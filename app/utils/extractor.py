@@ -344,6 +344,7 @@ def extract_and_save_content(user_id: str, url: str) -> Dict[str, Any]:
             embedding=embedding,
             content_type=content_type_value,
             platform=subtype
+            # Note: main save path is in app.main where explicit preview fields are set
         )
         
         db.add(item)

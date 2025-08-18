@@ -17,11 +17,10 @@ import {
   FlatList,
 } from 'react-native';
 import { useTheme } from '../contexts/ThemeContext';
-import { apiService, UserItem } from '../services/api';
+import { apiService, UserItem, API_BASE_URL } from '../services/api';
 import { Theme } from '../config/theme';
 import { Logo } from '../components/Logo';
 
-const API_BASE_URL = 'https://memora-production-da39.up.railway.app';
 const { width } = Dimensions.get('window');
 const PADDING = 16;
 const ITEM_WIDTH = (width - (PADDING * 3)) / 2;
@@ -163,11 +162,17 @@ export const BrowseScreen: React.FC = () => {
   };
   
   const getPreviewImageUrl = (item: UserItem): string | null => {
-    // For uploaded images, construct the direct file URL
+    // Prefer explicit preview fields
+    if (item.preview_thumbnail_path) {
+      return `${API_BASE_URL}/file/${item.id}?user_id=${USER_ID}`;
+    }
+    if (item.preview_image_url) {
+      return item.preview_image_url;
+    }
+    // Legacy fallbacks
     if (item.media_type === 'image' && item.file_path) {
       return `${API_BASE_URL}/file/${item.id}?user_id=${USER_ID}`;
     }
-    // For extracted URLs, use the image from content_data
     if (item.media_type === 'url' && item.content_data?.image) {
       return item.content_data.image;
     }
@@ -178,7 +183,6 @@ export const BrowseScreen: React.FC = () => {
     }
     // Fallback for other video platforms
     if (item.url?.includes('vimeo.com')) {
-      // Extract Vimeo video ID and use their thumbnail API
       const vimeoId = item.url.match(/vimeo\.com\/(\d+)/)?.[1];
       if (vimeoId) return `https://vumbnail.com/${vimeoId}.jpg`;
     }

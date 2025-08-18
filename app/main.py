@@ -56,6 +56,14 @@ if USER_PROFILES_AVAILABLE:
     app.include_router(user_profile_router)
     logger.info("User profile API endpoints enabled")
 
+# Attempt to run item fields migration on startup
+try:
+    from app.db.migrations.add_item_fields import check_migration_needed as check_items_migration, run_migration as run_items_migration
+    _ITEMS_MIGRATION_AVAILABLE = True
+except Exception as _e:
+    logger.warning(f"Item fields migration module not available: {_e}")
+    _ITEMS_MIGRATION_AVAILABLE = False
+
 # Initialize database on startup
 @app.on_event("startup")
 async def startup_event():
@@ -80,6 +88,19 @@ async def startup_event():
         except Exception as e:
             logger.warning(f"User profile migration skipped: {e}")
             logger.info("Continuing without user profiles")
+    
+    # Auto-migrate items table to add explicit content fields
+    try:
+        from app.db.database import engine
+        if _ITEMS_MIGRATION_AVAILABLE and check_items_migration(engine):
+            logger.info("Running items fields migration...")
+            ok = run_items_migration(engine, "apply")
+            if ok:
+                logger.info("✅ Items fields migration completed successfully")
+            else:
+                logger.error("❌ Items fields migration failed")
+    except Exception as e:
+        logger.warning(f"Items fields migration skipped: {e}")
 
 # Initialize file processor
 file_processor = FileProcessor()
@@ -146,16 +167,14 @@ async def extract_and_save(request: ExtractRequest, db: Session = Depends(get_db
         embedding_text = f"{analysis.get('title', '')} {analysis.get('description', '')} {request.user_context or ''}"
         embedding = generate_embedding(embedding_text)
         
-        # Prepare content_data with preview image
-        content_data_dict = {}
+        # Prepare preview and metadata
+        preview_url = None
+        content_json = {}
         if content.get("images") and len(content["images"]) > 0:
-            # Store the first image as preview
-            content_data_dict["image"] = content["images"][0]
-            content_data_dict["all_images"] = content["images"]
-        
-        # Add other metadata
+            preview_url = content["images"][0]
+            content_json["all_images"] = content["images"]
         if content.get("meta_description"):
-            content_data_dict["meta_description"] = content["meta_description"]
+            content_json["meta_description"] = content["meta_description"]
         
         # Create and save item
         item = Item(
@@ -168,7 +187,9 @@ async def extract_and_save(request: ExtractRequest, db: Session = Depends(get_db
             content_type=analysis.get("content_type"),
             platform=analysis.get("platform"),
             media_type="url",
-            content_data=json.dumps(content_data_dict) if content_data_dict else None,
+            content_text=None,
+            content_json=content_json or None,
+            preview_image_url=preview_url,
             user_context=request.user_context
         )
         
@@ -185,7 +206,8 @@ async def extract_and_save(request: ExtractRequest, db: Session = Depends(get_db
             "tags": item.tags,
             "content_type": item.content_type,
             "platform": item.platform,
-            "media_type": item.media_type
+            "media_type": item.media_type,
+            "preview_image_url": item.preview_image_url
         }
         
     except Exception as e:
@@ -234,7 +256,7 @@ async def save_text(request: SaveTextRequest, db: Session = Depends(get_db)):
         embedding_text = f"{analysis.get('title', '')} {analysis.get('description', '')} {english_text} {request.user_context or ''}"
         embedding = generate_embedding(embedding_text)
         
-        # Create and save item - store ORIGINAL text content
+        # Create and save item - store ORIGINAL text content in content_text
         item = Item(
             user_id=request.user_id,
             title=analysis.get("title"),
@@ -244,7 +266,7 @@ async def save_text(request: SaveTextRequest, db: Session = Depends(get_db)):
             content_type=analysis.get("content_type"),
             platform=analysis.get("platform"),
             media_type="text",
-            content_data=request.text_content,  # Store original text
+            content_text=request.text_content,
             user_context=request.user_context
         )
         
@@ -262,7 +284,7 @@ async def save_text(request: SaveTextRequest, db: Session = Depends(get_db)):
             "content_type": item.content_type,
             "platform": item.platform,
             "media_type": item.media_type,
-            "original_text": request.text_content  # Return original text
+            "original_text": request.text_content
         }
         
     except Exception as e:
@@ -371,11 +393,12 @@ async def save_file(request: SaveFileRequest, db: Session = Depends(get_db)):
             content_type=analysis.get("content_type"),
             platform=analysis.get("platform"),
             media_type=media_type,
-            content_data=extracted_text,
+            content_text=extracted_text,
             file_path=request.file_path,
             file_size=request.file_size,
             mime_type=request.mime_type,
-            user_context=request.user_context
+            user_context=request.user_context,
+            preview_thumbnail_path=request.file_path if media_type == "image" else None
         )
         
         db.add(item)
@@ -518,7 +541,11 @@ async def get_user_items(user_id: str, limit: int = 50, offset: int = 0, media_t
                 file_path=item.file_path,
                 file_size=item.file_size,
                 mime_type=item.mime_type,
-                user_context=item.user_context
+                user_context=item.user_context,
+                content_text=item.content_text,
+                content_json=item.content_json,
+                preview_image_url=item.preview_image_url,
+                preview_thumbnail_path=item.preview_thumbnail_path
             ))
         
         return result

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, HttpUrl
-from typing import List, Optional, Union, Literal
+from typing import List, Optional, Union, Literal, Dict, Any
 from datetime import datetime
 
 class ExtractRequest(BaseModel):
@@ -52,6 +52,11 @@ class MemoraItem(BaseModel):
     mime_type: Optional[str] = None
     user_context: Optional[str] = None
     similarity_score: Optional[float] = None
+    # New fields
+    content_text: Optional[str] = None
+    content_json: Optional[Dict[str, Any]] = None
+    preview_image_url: Optional[str] = None
+    preview_thumbnail_path: Optional[str] = None
 
     class Config:
         from_attributes = True 

@@ -18,12 +18,11 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { useTheme } from '../contexts/ThemeContext';
-import { apiService, UserItem, SearchResult } from '../services/api';
+import { apiService, UserItem, SearchResult, API_BASE_URL } from '../services/api';
 import { Theme } from '../config/theme';
 import { Logo } from '../components/Logo';
 
-// Import the base URL constant
-const API_BASE_URL = 'https://memo-production-9d97.up.railway.app';
+// Import the base URL constant from the centralized API service
 
 interface Message {
   id: string;
@@ -258,13 +257,19 @@ export const ChatScreen: React.FC = () => {
   };
 
   const getPreviewImageUrl = (item: SearchResult | UserItem): string | null => {
-    // For uploaded images, construct the direct file URL
+    // Prefer explicit preview fields
+    if ((item as any).preview_thumbnail_path) {
+      return `${API_BASE_URL}/file/${item.id}?user_id=${USER_ID}`;
+    }
+    if ((item as any).preview_image_url) {
+      return (item as any).preview_image_url;
+    }
+    // Legacy fallbacks
     if (item.media_type === 'image' && item.file_path) {
       return `${API_BASE_URL}/file/${item.id}?user_id=${USER_ID}`;
     }
-    // For extracted URLs, use the image from content_data
-    if (item.media_type === 'url' && item.content_data?.image) {
-      return item.content_data.image;
+    if (item.media_type === 'url' && (item as any).content_data?.image) {
+      return (item as any).content_data.image;
     }
     // Fallback for youtube links
     if (item.url?.includes('youtube.com') || item.url?.includes('youtu.be')) {
@@ -339,8 +344,8 @@ export const ChatScreen: React.FC = () => {
         )}
         <View style={styles.searchResultContent}>
           <Text style={[styles.memoraMessageText, styles.searchResultTitle]}>{result.title || 'Untitled Memory'}</Text>
-          {result.media_type === 'text' && result.content_data ? (
-            <Text style={styles.memoraMessageText} numberOfLines={3}>{result.content_data}</Text>
+          {result.media_type === 'text' && ((result as any).content_text || (result as any).content_data) ? (
+            <Text style={styles.memoraMessageText} numberOfLines={3}>{(result as any).content_text || (result as any).content_data}</Text>
           ) : result.description && (
             <Text style={styles.memoraMessageText} numberOfLines={3}>{result.description}</Text>
           )}
