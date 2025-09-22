@@ -23,6 +23,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useFocusEffect } from '@react-navigation/native';
+
 import { apiService, UserItem, TagGroup, TagWithCount, API_BASE_URL } from '../services/api';
 import { Theme } from '../config/theme';
 import { Logo } from '../components/Logo';
@@ -105,6 +106,9 @@ export const BrowseScreen: React.FC = () => {
   // Simple swipe detection state
   const [startX, setStartX] = useState<number | null>(null);
   const [startY, setStartY] = useState<number | null>(null);
+
+  // Image error tracking to prevent repeated failed loads
+  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
 
   // Reset to main browse screen when tab is focused
   useFocusEffect(
@@ -581,11 +585,16 @@ export const BrowseScreen: React.FC = () => {
                 
                 return (
                   <View key={`${item.id}-${index}`} style={[styles.categoryThumbnail, positions[index]]}>
-                    {previewImage ? (
+                    {previewImage && !failedImages.has(previewImage) ? (
                       <Image 
-                        source={{ uri: previewImage }} 
+                        source={{ uri: previewImage, cache: 'force-cache' }} 
                         style={styles.categoryThumbnailImage} 
                         resizeMode="cover"
+                        fadeDuration={200}
+                        onError={(error) => {
+                          console.log('Category thumbnail failed to load:', previewImage, error);
+                          setFailedImages(prev => new Set(prev).add(previewImage));
+                        }}
                       />
                     ) : (
                       <View style={[styles.categoryThumbnailPlaceholder, { backgroundColor: getPlaceholderColor(item) }]}>
@@ -658,14 +667,16 @@ export const BrowseScreen: React.FC = () => {
           onPressOut={handlePressOut}
           activeOpacity={0.8}
         >
-          {previewImage ? (
+          {previewImage && !failedImages.has(previewImage) ? (
             <Image 
-              source={{ uri: previewImage }} 
+              source={{ uri: previewImage, cache: 'force-cache' }} 
               style={styles.itemImage} 
               resizeMode="cover"
-              onError={() => {
+              fadeDuration={200}
+              onError={(error) => {
                 // Handle image load error by showing placeholder
-                console.log('Image failed to load:', previewImage);
+                console.log('Main item image failed to load:', previewImage, error);
+                setFailedImages(prev => new Set(prev).add(previewImage));
               }}
             />
           ) : (
@@ -773,6 +784,10 @@ export const BrowseScreen: React.FC = () => {
             contentContainerStyle={styles.memoriesContent}
             showsVerticalScrollIndicator={false}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={6}
+            windowSize={5}
+            initialNumToRender={4}
           />
         ) : filteredMemories.length > 0 ? (
         // Show items grid view - two columns
@@ -781,18 +796,22 @@ export const BrowseScreen: React.FC = () => {
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
         >
-          <FlatList
-            key="itemsGrid"
-            data={filteredMemories}
-            renderItem={renderItem}
-            keyExtractor={(item) => item.id}
-            numColumns={2}
-            columnWrapperStyle={styles.row}
-            contentContainerStyle={styles.memoriesContent}
-            showsVerticalScrollIndicator={false}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
-            scrollEventThrottle={16}
-          />
+                      <FlatList
+              key="itemsGrid"
+              data={filteredMemories}
+              renderItem={renderItem}
+              keyExtractor={(item) => item.id}
+              numColumns={2}
+              columnWrapperStyle={styles.row}
+              contentContainerStyle={styles.memoriesContent}
+              showsVerticalScrollIndicator={false}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
+              scrollEventThrottle={16}
+              removeClippedSubviews={true}
+              maxToRenderPerBatch={6}
+              windowSize={5}
+              initialNumToRender={4}
+            />
         </View>
       ) : (
         <Animated.View style={[styles.emptyState, { opacity: fadeAnim }]}>
@@ -835,9 +854,13 @@ export const BrowseScreen: React.FC = () => {
                   disabled={!selectedMemory.url}
                 >
                   <Image
-                    source={{ uri: selectedMemory.preview_image_url }}
+                    source={{ uri: selectedMemory.preview_image_url, cache: 'force-cache' }}
                     style={styles.modalImage}
                     resizeMode="cover"
+                    fadeDuration={150}
+                    onError={(error) => {
+                      console.log('Modal image failed to load:', selectedMemory.preview_image_url, error);
+                    }}
                   />
                 </TouchableOpacity>
               )}
