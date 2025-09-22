@@ -18,9 +18,11 @@ import {
   TextInput,
   Share,
   Clipboard,
+
 } from 'react-native';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useFocusEffect } from '@react-navigation/native';
 import { apiService, UserItem, TagGroup, TagWithCount, API_BASE_URL } from '../services/api';
 import { Theme } from '../config/theme';
 import { Logo } from '../components/Logo';
@@ -98,6 +100,45 @@ export const BrowseScreen: React.FC = () => {
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const filterSlideAnim = useRef(new Animated.Value(30)).current;
   const itemAnimations = useRef(new Map<string, { slide: Animated.Value; fade: Animated.Value; press: Animated.Value }>()).current;
+
+
+  // Simple swipe detection state
+  const [startX, setStartX] = useState<number | null>(null);
+  const [startY, setStartY] = useState<number | null>(null);
+
+  // Reset to main browse screen when tab is focused
+  useFocusEffect(
+    useCallback(() => {
+      // Reset to categories view and clear any selected tag
+      setViewMode('categories');
+      setSelectedTag(null);
+    }, [])
+  );
+
+  // Simple touch handlers for swipe detection
+  const handleTouchStart = (evt: any) => {
+    if (viewMode === 'categories' && selectedTag !== null) {
+      setStartX(evt.nativeEvent.pageX);
+      setStartY(evt.nativeEvent.pageY);
+    }
+  };
+
+  const handleTouchEnd = (evt: any) => {
+    if (viewMode === 'categories' && selectedTag !== null && startX !== null && startY !== null) {
+      const endX = evt.nativeEvent.pageX;
+      const endY = evt.nativeEvent.pageY;
+      const deltaX = endX - startX;
+      const deltaY = endY - startY;
+
+      // Check for right swipe
+      if (deltaX > 100 && Math.abs(deltaY) < 50) {
+        console.log('Right swipe detected!');
+        setSelectedTag(null);
+      }
+    }
+    setStartX(null);
+    setStartY(null);
+  };
 
   const mapContentType = (mediaType: string): FilterType => {
     switch (mediaType?.toLowerCase()) {
@@ -529,11 +570,13 @@ export const BrowseScreen: React.FC = () => {
                 if (!item) return <View key={index} style={styles.categoryThumbnailEmpty} />;
                 
                 const previewImage = getPreviewImageUrl(item);
+                const thumbnailSize = (ITEM_WIDTH - 30) / 2;
+                const gap = 1; // Minimal gap for corner alignment
                 const positions = [
-                  { top: 8, left: 8 },      // Top-left
-                  { top: 8, right: 8 },     // Top-right  
-                  { bottom: 8, left: 8 },   // Bottom-left
-                  { bottom: 8, right: 8 }   // Bottom-right
+                  { top: 0, left: 0 },                           // Top-left
+                  { top: 0, left: thumbnailSize + gap },         // Top-right  
+                  { top: thumbnailSize + gap, left: 0 },         // Bottom-left
+                  { top: thumbnailSize + gap, left: thumbnailSize + gap }  // Bottom-right
                 ];
                 
                 return (
@@ -668,18 +711,41 @@ export const BrowseScreen: React.FC = () => {
     <SafeAreaView style={styles.container}>
       <Animated.View style={[styles.header, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
         <View style={styles.headerContent}>
-          <Logo size={42} color={theme.colors.primary} />
-          <Text style={styles.headerTitle}>Browse</Text>
+          {viewMode === 'categories' && selectedTag !== null ? (
+            // Category-specific header
+            <>
+              <TouchableOpacity 
+                style={styles.headerBackButton}
+                onPress={() => setSelectedTag(null)}
+              >
+                <Text style={styles.headerBackText}>←</Text>
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>
+                {selectedTag.charAt(0).toUpperCase() + selectedTag.slice(1)}
+              </Text>
+              <View style={styles.headerBackButton} />
+            </>
+          ) : (
+            // Default header
+            <>
+              <Logo size={42} color={theme.colors.primary} />
+              <Text style={styles.headerTitle}>Browse</Text>
+            </>
+          )}
         </View>
       </Animated.View>
       
-              {/* View Mode Switcher */}
-        <Animated.View style={[styles.viewModeContainer, { transform: [{ translateY: filterSlideAnim }] }]}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.viewModeContent}>
-            <ViewModeButton mode="categories" label="Categories" />
-            <ViewModeButton mode="all" label="All" />
-          </ScrollView>
-        </Animated.View>
+      {/* Content wrapper */}
+      <View style={{ flex: 1 }}>
+              {/* View Mode Switcher - Hide when viewing specific category */}
+        {!(viewMode === 'categories' && selectedTag !== null) && (
+          <Animated.View style={[styles.viewModeContainer, { transform: [{ translateY: filterSlideAnim }] }]}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.viewModeContent}>
+              <ViewModeButton mode="categories" label="Categories" />
+              <ViewModeButton mode="all" label="All" />
+            </ScrollView>
+          </Animated.View>
+        )}
 
         {/* Filters based on current view mode */}
         {viewMode === 'all' && (
@@ -693,21 +759,7 @@ export const BrowseScreen: React.FC = () => {
           </Animated.View>
         )}
 
-                {/* Category header when viewing specific category */}
-        {viewMode === 'categories' && selectedTag !== null && (
-          <View style={styles.categoryHeader}>
-            <TouchableOpacity 
-              style={styles.backButton}
-              onPress={() => setSelectedTag(null)}
-            >
-              <Text style={styles.backButtonText}>← Categories</Text>
-            </TouchableOpacity>
-            <Text style={styles.categoryHeaderTitle}>
-              {selectedTag.charAt(0).toUpperCase() + selectedTag.slice(1)}
-            </Text>
-            <View style={styles.backButtonPlaceholder} />
-          </View>
-        )}
+        
 
         {viewMode === 'categories' && selectedTag === null ? (
           // Show category cards in 2x2 grid
@@ -724,17 +776,24 @@ export const BrowseScreen: React.FC = () => {
           />
         ) : filteredMemories.length > 0 ? (
         // Show items grid view - two columns
-        <FlatList
-          key="itemsGrid"
-          data={filteredMemories}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.id}
-          numColumns={2}
-          columnWrapperStyle={styles.row}
-          contentContainerStyle={styles.memoriesContent}
-          showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
-        />
+        <View 
+          style={{ flex: 1 }} 
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        >
+          <FlatList
+            key="itemsGrid"
+            data={filteredMemories}
+            renderItem={renderItem}
+            keyExtractor={(item) => item.id}
+            numColumns={2}
+            columnWrapperStyle={styles.row}
+            contentContainerStyle={styles.memoriesContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
+            scrollEventThrottle={16}
+          />
+        </View>
       ) : (
         <Animated.View style={[styles.emptyState, { opacity: fadeAnim }]}>
           <Text style={styles.emptyStateTitle}>
@@ -744,6 +803,7 @@ export const BrowseScreen: React.FC = () => {
           <Text style={styles.emptyStateSubtitle}>Try adding some in the Chat tab!</Text>
         </Animated.View>
       )}
+      </View>
 
       <Modal visible={modalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={closeModalDetails}>
         <SafeAreaView style={styles.modalContainer}>
@@ -862,6 +922,19 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     fontWeight: 'bold',
     color: theme.colors.text,
     marginLeft: 16,
+    flex: 1,
+    textAlign: 'center',
+  },
+  headerBackButton: {
+    width: 58, // Same as logo + margin for balance
+    height: 42,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerBackText: {
+    fontSize: 24,
+    color: theme.colors.primary,
+    fontWeight: '600',
   },
   viewModeContainer: {
     paddingVertical: 8,
@@ -1126,49 +1199,57 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   categoryCard: {
     width: ITEM_WIDTH,
     height: ITEM_WIDTH, // Square like iPhone folders
+    // Glassmorphism effect with backdrop blur simulation
     backgroundColor: theme.colors.background === '#000000' || theme.colors.background === '#1C1C1E'
-      ? 'rgba(44, 44, 46, 0.95)' // Dark mode
-      : 'rgba(255, 255, 255, 0.9)', // Light mode
+      ? 'rgba(255, 255, 255, 0.08)' // Dark mode - ultra subtle white overlay
+      : 'rgba(255, 255, 255, 0.3)', // Light mode - light subtle white overlay
     borderRadius: 28,
-    padding: 12,
-    borderWidth: 0,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: theme.colors.background === '#000000' || theme.colors.background === '#1C1C1E' ? 0.4 : 0.12,
-    shadowRadius: 12,
+    padding: 14,
+    // Multi-layered border for depth
+    borderWidth: 1,
+    borderColor: theme.colors.background === '#000000' || theme.colors.background === '#1C1C1E'
+      ? 'rgba(255, 255, 255, 0.12)' // Dark mode - subtle light border
+      : 'rgba(255, 255, 255, 0.6)', // Light mode - light white border
+    // Premium shadow with multiple layers
+    shadowColor: theme.colors.background === '#000000' || theme.colors.background === '#1C1C1E' ? '#000' : '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: theme.colors.background === '#000000' || theme.colors.background === '#1C1C1E' ? 0.6 : 0.2,
+    shadowRadius: 20,
     elevation: 8,
     alignItems: 'center',
     justifyContent: 'center',
+    // Additional styling for premium feel
+    overflow: 'hidden', // Ensures clean edges
   },
   categoryThumbnails: {
-    width: '100%',
-    height: '100%',
+    width: ITEM_WIDTH - 28, // Even larger container
+    height: ITEM_WIDTH - 28,
     position: 'relative',
-    borderRadius: 20,
-    overflow: 'hidden',
+    borderRadius: 16,
+    overflow: 'visible', // Allow shadows to show
     backgroundColor: 'transparent',
   },
   categoryThumbnail: {
     position: 'absolute',
-    width: (ITEM_WIDTH - 32) / 2, // Slightly smaller with more padding
-    height: (ITEM_WIDTH - 32) / 2,
+    width: (ITEM_WIDTH - 30) / 2, // Much bigger thumbnails
+    height: (ITEM_WIDTH - 30) / 2,
     borderRadius: 16,
     overflow: 'hidden',
     borderWidth: 0,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 4,
   },
   categoryThumbnailEmpty: {
     position: 'absolute',
-    width: (ITEM_WIDTH - 32) / 2,
-    height: (ITEM_WIDTH - 32) / 2,
+    width: (ITEM_WIDTH - 30) / 2,
+    height: (ITEM_WIDTH - 30) / 2,
     borderRadius: 16,
     backgroundColor: theme.colors.background === '#000000' || theme.colors.background === '#1C1C1E'
-      ? 'rgba(255, 255, 255, 0.1)' // Dark mode
-      : 'rgba(0, 0, 0, 0.08)', // Light mode
+      ? 'rgba(255, 255, 255, 0.06)' // Dark mode
+      : 'rgba(0, 0, 0, 0.04)', // Light mode
     borderWidth: 0,
   },
   categoryThumbnailImage: {
@@ -1201,39 +1282,11 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     letterSpacing: -0.2,
     marginRight: 6,
   },
-  categoryCount: {
+    categoryCount: {
     fontSize: 13,
     fontWeight: '500',
     color: theme.colors.textSecondary,
     opacity: 0.8,
   },
-  // Category navigation styles
-  categoryHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-    backgroundColor: theme.colors.background,
-  },
-  backButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-  },
-  backButtonText: {
-    fontSize: 16,
-    color: theme.colors.primary,
-    fontWeight: '600',
-  },
-  categoryHeaderTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    textAlign: 'center',
-  },
-  backButtonPlaceholder: {
-    width: 80, // Same width as back button for centering
-  },
-}); 
+
+  });  
