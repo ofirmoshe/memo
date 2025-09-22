@@ -12,7 +12,8 @@ import { LoadingScreen } from './src/components/LoadingScreen';
 import { View, StyleSheet } from 'react-native';
 import { Path, Svg } from 'react-native-svg';
 import * as Linking from 'expo-linking';
-import { parseShareData, extractShareContent } from './src/utils/shareHandler';
+import { Platform } from 'react-native';
+import { parseShareData, extractShareContent, handleAndroidShareIntent } from './src/utils/shareHandler';
 
 const Tab = createBottomTabNavigator();
 
@@ -81,6 +82,7 @@ const AppNavigator = ({ sharedUrl, onUrlProcessed }: { sharedUrl: string | null,
 
   return (
     <Tab.Navigator
+      initialRouteName={sharedUrl ? "Chat" : "Browse"}
       screenOptions={({ route }: { route: any }) => ({
         headerShown: false,
         tabBarShowLabel: false,
@@ -125,16 +127,33 @@ const AppContent = () => {
       }
     });
 
+    // Handle Android share intents
+    if (Platform.OS === 'android') {
+      const handleInitialShareIntent = async () => {
+        try {
+          // This would be implemented with a native module in a real app
+          // For now, we'll rely on URL handling
+        } catch (error) {
+          console.log('Error handling initial share intent:', error);
+        }
+      };
+      
+      handleInitialShareIntent();
+    }
+
     return () => {
       subscription?.remove();
     };
   }, []);
 
   const handleDeepLink = ({ url }: { url: string }) => {
+    console.log('Handling deep link:', url);
+    
     if (url) {
       // Try to parse as Memora share link first
       const shareData = parseShareData(url);
       if (shareData) {
+        console.log('Parsed share data:', shareData);
         if (shareData.url) {
           setSharedUrl(shareData.url);
         } else if (shareData.text) {
@@ -146,6 +165,7 @@ const AppContent = () => {
       // Fallback: try to extract content from various formats
       const extractedContent = extractShareContent(url);
       if (extractedContent) {
+        console.log('Extracted content:', extractedContent);
         if (extractedContent.url) {
           setSharedUrl(extractedContent.url);
         } else if (extractedContent.text) {

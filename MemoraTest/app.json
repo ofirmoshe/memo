@@ -9,7 +9,7 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1a1a1a"
+      "backgroundColor": "#FFFFFF"
     },
     "assetBundlePatterns": [
       "**/*"
@@ -18,19 +18,42 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.memora.assistant",
       "icon": "./assets/icon.png",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "CFBundleURLTypes": [
           {
             "CFBundleURLName": "memora",
             "CFBundleURLSchemes": ["memora"]
+          },
+          {
+            "CFBundleURLName": "google",
+            "CFBundleURLSchemes": ["com.memora.assistant"]
+          }
+        ],
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        },
+        "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "URL",
+            "CFBundleTypeRole": "Editor",
+            "LSItemContentTypes": ["public.url"],
+            "LSHandlerRank": "Owner"
+          },
+          {
+            "CFBundleTypeName": "Text",
+            "CFBundleTypeRole": "Editor", 
+            "LSItemContentTypes": ["public.text", "public.plain-text"],
+            "LSHandlerRank": "Owner"
           }
         ]
-      }
+      },
+      "associatedDomains": ["applinks:memora.app"]
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#1a1a1a"
+        "backgroundColor": "#FFFFFF"
       },
       "package": "com.memora.assistant",
       "icon": "./assets/icon.png",
@@ -44,6 +67,24 @@
             }
           ],
           "category": ["BROWSABLE", "DEFAULT"]
+        },
+        {
+          "action": "SEND",
+          "data": [
+            {
+              "mimeType": "text/plain"
+            }
+          ],
+          "category": ["DEFAULT"]
+        },
+        {
+          "action": "SEND",
+          "data": [
+            {
+              "mimeType": "text/*"
+            }
+          ],
+          "category": ["DEFAULT"]
         }
       ]
     },
