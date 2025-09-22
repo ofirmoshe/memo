@@ -296,9 +296,9 @@ def analyze_content_with_llm(content: Dict[str, str]) -> Dict[str, Any]:
     if len(text) > max_text_length:
         text = text[:max_text_length] + "..."
     
-    # Create prompt for LLM
+    # Create prompt for LLM with improved tagging strategy
     prompt = f"""
-    You are a helpful assistant that analyzes content and extracts descriptions and tags.
+    You are a helpful assistant that analyzes content and extracts descriptions and tags for a personal knowledge management system.
     
     Title: {title}
     
@@ -309,18 +309,27 @@ def analyze_content_with_llm(content: Dict[str, str]) -> Dict[str, Any]:
         - Your description should be as descriptive as possible, and should include the most important details of the content.
         - This description will be later used for natural language search, so it should be as detailed yet concise as possible, and should include the most important details of the content.
         - IMPORTANT: Always provide the description in English, regardless of the source language. If the content is in a foreign language, translate the key information to English.
+    
     2. A list of 3-7 relevant tags that categorize this content.
     
-        - When generating tags, prioritize these standard categories if they apply:
-        ```technology, programming, science, health, business, finance, education, entertainment,
-        sports, travel, food, fashion, art, design, politics, news, environment, history,
-        philosophy, psychology, productivity, self-improvement, career```
+    CRITICAL TAGGING RULES:
+    - ALL tags must be in lowercase
+    - First, check if content matches these PRIORITY CATEGORIES and use them if applicable:
+        recipe, travel, prague, dog, cat, pet, book, decor, interior, home, flight, hotel, technology, news, shopping, health, fitness, work, finance, entertainment, music, movie, art, photography, fashion, education, science, business, productivity, cooking, food
     
-        - Try to use the most specific tags possible.
-        - Maximum 7 tags.
-        - IMPORTANT: Always provide tags in English, regardless of the source language.
-        - If the content doesn't match any of these categories, create appropriate specific tags.
-        - Each tag should be a single word or short phrase (1-3 words maximum).
+    - For locations: use lowercase city/country names (e.g., "prague", "london", "japan")
+    - For animals: use singular form (e.g., "dog" not "dogs", "cat" not "cats")
+    - For topics: use broad categories first, then specific if needed (e.g., "recipe" instead of "honey recipe", "travel" instead of "prague travel tips")
+    - Avoid duplicates or near-duplicates (don't use both "dog" and "dogs")
+    - Each tag should be 1-2 words maximum
+    - Maximum 7 tags total
+    - IMPORTANT: Always provide tags in English and lowercase
+    
+    EXAMPLES:
+    - For a honey cake recipe → ["recipe", "cooking", "dessert"]
+    - For Prague travel tips → ["travel", "prague", "tips"]
+    - For dog training article → ["dog", "training", "pet"]
+    - For home decoration ideas → ["decor", "interior", "home"]
     
     Format your response as JSON:
     {{
@@ -406,14 +415,22 @@ def get_content_analysis_prompt(content: str, url: str = None, content_type: str
 Your task is to analyze the provided content and extract:
 1. A clear, descriptive title (max 100 characters)
 2. A comprehensive summary/description (max 500 characters)
-3. Relevant tags (5-10 tags that would help with searching and categorization)
+3. Relevant tags (3-7 tags that would help with searching and categorization)
 4. Content type classification
 5. Platform identification (if applicable)
 
-Guidelines:
+CRITICAL TAGGING GUIDELINES:
+- ALL tags must be in lowercase
+- FIRST check if content matches these PRIORITY CATEGORIES and use them:
+  recipe, travel, prague, dog, cat, pet, book, decor, interior, home, flight, hotel, technology, news, shopping, health, fitness, work, finance, entertainment, music, movie, art, photography, fashion, education, science, business, productivity, cooking, food
+- For locations: use lowercase city/country names (e.g., "prague", "london", "japan")
+- For animals: use singular form (e.g., "dog" not "dogs", "cat" not "cats")  
+- For topics: use broad categories first (e.g., "recipe" not "honey recipe", "travel" not "prague travel tips")
+- Avoid duplicates or near-duplicates
+- Each tag should be 1-2 words maximum
+- Maximum 7 tags total
 - Be concise but informative
 - Focus on the most important and searchable aspects
-- Use tags that are specific and useful for retrieval
 - Consider the user's context when provided
 - For personal documents, be respectful of privacy
 

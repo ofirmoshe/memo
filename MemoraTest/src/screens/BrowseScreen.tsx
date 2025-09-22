@@ -72,7 +72,7 @@ interface FilterCounts {
 }
 
 type FilterType = 'all' | 'text' | 'url' | 'image' | 'document';
-type ViewMode = 'media' | 'tags' | 'chronological';
+type ViewMode = 'categories' | 'all';
 
 export const BrowseScreen: React.FC = () => {
   const { theme } = useTheme();
@@ -80,7 +80,7 @@ export const BrowseScreen: React.FC = () => {
   const [memories, setMemories] = useState<UserItem[]>([]);
   const [filteredMemories, setFilteredMemories] = useState<UserItem[]>([]);
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
-  const [viewMode, setViewMode] = useState<ViewMode>('media');
+  const [viewMode, setViewMode] = useState<ViewMode>('categories');
   const [tagGroups, setTagGroups] = useState<TagGroup[]>([]);
   const [tagsWithCounts, setTagsWithCounts] = useState<TagWithCount[]>([]);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
@@ -141,7 +141,9 @@ export const BrowseScreen: React.FC = () => {
       const items = await apiService.getUserItems(user.id);
       const sortedItems = items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       setMemories(sortedItems);
-      filterMemories(activeFilter, sortedItems);
+      
+      // Initialize with categories view (default)
+      setFilteredMemories(sortedItems);
       setFilterCounts(calculateFilterCounts(sortedItems));
       
       // Load tag data for tag-based view
@@ -164,7 +166,7 @@ export const BrowseScreen: React.FC = () => {
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     loadMemories();
-  }, [activeFilter, user]);
+  }, [user]);
 
   const filterMemories = (filter: FilterType, memoriesToFilter: UserItem[]) => {
     setActiveFilter(filter);
@@ -184,24 +186,24 @@ export const BrowseScreen: React.FC = () => {
       }),
     ]).start();
 
-    if (filter === 'all') {
-      setFilteredMemories(memoriesToFilter);
-    } else {
-      const filtered = memoriesToFilter.filter(memory => mapContentType(memory.media_type || '') === filter);
-      setFilteredMemories(filtered);
-    }
+    // Filter by media type (no "all" option - that's handled by view mode)
+    const filtered = memoriesToFilter.filter(memory => mapContentType(memory.media_type || '') === filter);
+    setFilteredMemories(filtered);
   };
 
   const switchViewMode = (mode: ViewMode) => {
     setViewMode(mode);
     setSelectedTag(null);
     
-    if (mode === 'chronological') {
-      setFilteredMemories(memories);
-    } else if (mode === 'media') {
-      filterMemories(activeFilter, memories);
+    if (mode === 'all') {
+      // Show all memories, potentially filtered by media type
+      if (activeFilter !== 'all') {
+        filterMemories(activeFilter, memories);
+      } else {
+        setFilteredMemories(memories);
+      }
     }
-    // For tags view, we'll use the tagGroups data
+    // For categories view, we'll use the tagGroups data
   };
 
   const selectTag = (tag: string) => {
@@ -214,8 +216,8 @@ export const BrowseScreen: React.FC = () => {
 
   const showAllTagItems = () => {
     setSelectedTag(null);
-    // When in tags view and showing all tags, show all items chronologically
-    if (viewMode === 'tags') {
+    // When in categories view and showing all categories, show all items chronologically
+    if (viewMode === 'categories') {
       setFilteredMemories(memories);
     }
   };
@@ -396,7 +398,7 @@ export const BrowseScreen: React.FC = () => {
   const FilterPill = ({ filterType, label }: { filterType: FilterType, label: string }) => {
     const count = filterCounts[filterType];
     const isActive = activeFilter === filterType;
-    if (count === 0 && filterType !== 'all') return null;
+    if (count === 0) return null;
 
     return (
       <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
@@ -421,6 +423,104 @@ export const BrowseScreen: React.FC = () => {
           {tag} ({count})
         </Text>
       </TouchableOpacity>
+    );
+  };
+
+  const renderTagGroup = ({ item: tagGroup }: { item: TagGroup }) => {
+    const previewItems = tagGroup.items.slice(0, 4);
+    
+    // Fill empty slots with placeholders if less than 4 items
+    const filledItems = [...previewItems];
+    while (filledItems.length < 4) {
+      filledItems.push(previewItems[0] || null);
+    }
+
+    // Get or create animation values for this category
+    if (!itemAnimations.has(tagGroup.tag)) {
+      itemAnimations.set(tagGroup.tag, {
+        slide: new Animated.Value(0),
+        fade: new Animated.Value(1),
+        press: new Animated.Value(1),
+      });
+    }
+    
+    const anim = itemAnimations.get(tagGroup.tag)!;
+
+    const handlePressIn = () => {
+      Animated.spring(anim.press, {
+        toValue: 0.92,
+        tension: 100,
+        friction: 8,
+        useNativeDriver: true,
+      }).start();
+    };
+
+    const handlePressOut = () => {
+      Animated.spring(anim.press, {
+        toValue: 1,
+        tension: 100,
+        friction: 8,
+        useNativeDriver: true,
+      }).start();
+    };
+    
+    return (
+      <View style={styles.categoryContainer}>
+        <Animated.View style={{
+          transform: [{ scale: anim.press }]
+        }}>
+          <TouchableOpacity
+            style={styles.categoryCard}
+            onPress={() => selectTag(tagGroup.tag)}
+            onPressIn={handlePressIn}
+            onPressOut={handlePressOut}
+            activeOpacity={1}
+          >
+            {/* Thumbnail Grid - 2x2 layout like iPhone folders */}
+            <View style={styles.categoryThumbnails}>
+              {filledItems.map((item, index) => {
+                if (!item) return <View key={index} style={styles.categoryThumbnailEmpty} />;
+                
+                const previewImage = getPreviewImageUrl(item);
+                const positions = [
+                  { top: 4, left: 4 },      // Top-left
+                  { top: 4, right: 4 },     // Top-right  
+                  { bottom: 4, left: 4 },   // Bottom-left
+                  { bottom: 4, right: 4 }   // Bottom-right
+                ];
+                
+                return (
+                  <View key={`${item.id}-${index}`} style={[styles.categoryThumbnail, positions[index]]}>
+                    {previewImage ? (
+                      <Image 
+                        source={{ uri: previewImage }} 
+                        style={styles.categoryThumbnailImage} 
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={[styles.categoryThumbnailPlaceholder, { backgroundColor: getPlaceholderColor(item) }]}>
+                        <Text style={styles.categoryThumbnailIcon}>
+                          {getPlaceholderIcon(item)}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          </TouchableOpacity>
+        </Animated.View>
+        
+        {/* Category Info - Outside the card like iPhone */}
+        <View style={styles.categoryInfo}>
+          <Text style={styles.categoryTitle} numberOfLines={1}>
+            {tagGroup.tag.charAt(0).toUpperCase() + tagGroup.tag.slice(1)}
+          </Text>
+          <Text style={styles.categoryCount}>
+            {tagGroup.count} {tagGroup.count === 1 ? 'item' : 'items'}
+          </Text>
+        </View>
+      </View>
     );
   };
 
@@ -526,77 +626,43 @@ export const BrowseScreen: React.FC = () => {
         </View>
       </Animated.View>
       
-      {/* View Mode Switcher */}
-      <Animated.View style={[styles.viewModeContainer, { transform: [{ translateY: filterSlideAnim }] }]}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.viewModeContent}>
-          <ViewModeButton mode="chronological" label="All" />
-          <ViewModeButton mode="media" label="Media Type" />
-          <ViewModeButton mode="tags" label="Tags" />
-        </ScrollView>
-      </Animated.View>
-
-      {/* Filters based on current view mode */}
-      {viewMode === 'media' && (
-        <Animated.View style={[styles.filterContainer, { transform: [{ translateY: filterSlideAnim }] }]}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterContent}>
-            <FilterPill filterType="all" label="All" />
-            <FilterPill filterType="url" label="Links" />
-            <FilterPill filterType="text" label="Notes" />
-            <FilterPill filterType="image" label="Images" />
-            <FilterPill filterType="document" label="Documents" />
+              {/* View Mode Switcher */}
+        <Animated.View style={[styles.viewModeContainer, { transform: [{ translateY: filterSlideAnim }] }]}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.viewModeContent}>
+            <ViewModeButton mode="categories" label="Categories" />
+            <ViewModeButton mode="all" label="All" />
           </ScrollView>
         </Animated.View>
-      )}
 
-      {viewMode === 'tags' && (
-        <Animated.View style={[styles.filterContainer, { transform: [{ translateY: filterSlideAnim }] }]}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterContent}>
-            <TouchableOpacity
-              style={[styles.tagPill, { backgroundColor: selectedTag === null ? theme.colors.primary : theme.colors.surface }]}
-              onPress={showAllTagItems}
-            >
-              <Text style={[styles.tagPillText, { color: selectedTag === null ? theme.colors.background : theme.colors.text }]}>
-                All Tags ({memories.length})
-              </Text>
-            </TouchableOpacity>
-            {tagsWithCounts.slice(0, 10).map((tagData) => (
-              <TagPill key={tagData.tag} tag={tagData.tag} count={tagData.count} />
-            ))}
-          </ScrollView>
-        </Animated.View>
-      )}
+        {/* Filters based on current view mode */}
+        {viewMode === 'all' && (
+          <Animated.View style={[styles.filterContainer, { transform: [{ translateY: filterSlideAnim }] }]}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterContent}>
+              <FilterPill filterType="url" label="Links" />
+              <FilterPill filterType="text" label="Notes" />
+              <FilterPill filterType="image" label="Images" />
+              <FilterPill filterType="document" label="Documents" />
+            </ScrollView>
+          </Animated.View>
+        )}
 
-      {viewMode === 'tags' && selectedTag === null ? (
-        // Show tag groups view
+                {viewMode === 'categories' && selectedTag === null ? (
+          // Show category cards in 2x2 grid
+          <FlatList
+            key="categoryGrid"
+            data={tagGroups}
+            renderItem={renderTagGroup}
+            keyExtractor={(item) => item.tag}
+            numColumns={2}
+            columnWrapperStyle={styles.row}
+            contentContainerStyle={styles.memoriesContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
+          />
+        ) : filteredMemories.length > 0 ? (
+        // Show items grid view - two columns
         <FlatList
-          data={tagGroups}
-          renderItem={({ item: tagGroup }) => (
-            <TouchableOpacity
-              style={styles.tagGroupContainer}
-              onPress={() => selectTag(tagGroup.tag)}
-            >
-              <View style={styles.tagGroupHeader}>
-                <Text style={styles.tagGroupTitle}>{tagGroup.tag}</Text>
-                <Text style={styles.tagGroupCount}>{tagGroup.count} items</Text>
-              </View>
-              <View style={styles.tagGroupPreview}>
-                {tagGroup.items.slice(0, 4).map((item) => (
-                  <View key={item.id} style={styles.tagGroupPreviewItem}>
-                    <Text style={styles.tagGroupPreviewText} numberOfLines={1}>
-                      {item.title || 'Untitled'}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            </TouchableOpacity>
-          )}
-          keyExtractor={(item) => item.tag}
-          contentContainerStyle={styles.memoriesContent}
-          showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
-        />
-      ) : filteredMemories.length > 0 ? (
-        <FlatList
+          key="itemsGrid"
           data={filteredMemories}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
@@ -609,8 +675,8 @@ export const BrowseScreen: React.FC = () => {
       ) : (
         <Animated.View style={[styles.emptyState, { opacity: fadeAnim }]}>
           <Text style={styles.emptyStateTitle}>
-            No {viewMode === 'media' && activeFilter !== 'all' ? activeFilter : 
-                viewMode === 'tags' && selectedTag ? `"${selectedTag}"` : ''} memories found
+            No {viewMode === 'all' && activeFilter !== 'all' ? activeFilter : 
+                viewMode === 'categories' && selectedTag ? `"${selectedTag}"` : ''} memories found
           </Text>
           <Text style={styles.emptyStateSubtitle}>Try adding some in the Chat tab!</Text>
         </Animated.View>
@@ -784,6 +850,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   },
   memoriesContent: {
     paddingHorizontal: PADDING,
+    paddingTop: 12,
     paddingBottom: 20,
   },
   row: {
@@ -985,5 +1052,101 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   tagGroupPreviewText: {
     fontSize: 14,
     color: theme.colors.textSecondary,
+  },
+  // iPhone-style category cards
+  categoryContainer: {
+    width: ITEM_WIDTH,
+    alignItems: 'center',
+    marginBottom: PADDING + 8,
+    marginTop: 8,
+  },
+  categoryCard: {
+    width: ITEM_WIDTH,
+    height: ITEM_WIDTH, // Square like iPhone folders
+    backgroundColor: theme.colors.card === '#FFFFFF' 
+      ? 'rgba(255, 255, 255, 0.9)' 
+      : 'rgba(44, 44, 46, 0.95)', // Dark mode support
+    borderRadius: 28,
+    padding: 8,
+    borderWidth: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: theme.colors.card === '#FFFFFF' ? 0.15 : 0.4,
+    shadowRadius: 8,
+    elevation: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryThumbnails: {
+    width: '100%',
+    height: '100%',
+    position: 'relative',
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: 'transparent',
+  },
+  categoryThumbnail: {
+    position: 'absolute',
+    width: (ITEM_WIDTH - 24) / 2, // Much larger thumbnails
+    height: (ITEM_WIDTH - 24) / 2,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: theme.colors.card === '#FFFFFF' 
+      ? 'rgba(255, 255, 255, 0.8)' 
+      : 'rgba(255, 255, 255, 0.1)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  categoryThumbnailEmpty: {
+    position: 'absolute',
+    width: (ITEM_WIDTH - 24) / 2,
+    height: (ITEM_WIDTH - 24) / 2,
+    borderRadius: 12,
+    backgroundColor: theme.colors.card === '#FFFFFF' 
+      ? 'rgba(0, 0, 0, 0.08)' 
+      : 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1,
+    borderColor: theme.colors.card === '#FFFFFF' 
+      ? 'rgba(0, 0, 0, 0.1)' 
+      : 'rgba(255, 255, 255, 0.05)',
+  },
+  categoryThumbnailImage: {
+    width: '100%',
+    height: '100%',
+  },
+  categoryThumbnailPlaceholder: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+  },
+  categoryThumbnailIcon: {
+    fontSize: 24,
+    color: 'rgba(255, 255, 255, 0.9)',
+  },
+  categoryInfo: {
+    alignItems: 'center',
+    width: '100%',
+    marginTop: 12,
+  },
+  categoryTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.text,
+    textAlign: 'center',
+    marginBottom: 2,
+    letterSpacing: -0.3,
+  },
+  categoryCount: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: theme.colors.textSecondary,
+    textAlign: 'center',
+    opacity: 0.7,
   },
 }); 
