@@ -14,9 +14,9 @@ logger = logging.getLogger(__name__)
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./memora.db")
 
 # Get pool settings from environment variables
-DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "5"))
-DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "10"))
-DB_POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "30"))
+DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "20"))  # Increased from 5 to 20
+DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "30"))  # Increased from 10 to 30 (total 50 connections)
+DB_POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "60"))  # Increased from 30 to 60 seconds
 DB_POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800"))
 
 # Create SQLAlchemy engine with appropriate options
@@ -28,8 +28,10 @@ if DATABASE_URL.startswith("postgresql"):
         max_overflow=DB_MAX_OVERFLOW,
         pool_timeout=DB_POOL_TIMEOUT,
         pool_recycle=DB_POOL_RECYCLE,
+        pool_pre_ping=True,  # Validate connections before use
+        echo_pool=True,      # Log pool events for debugging
     )
-    logger.info(f"Using PostgreSQL database with connection pooling")
+    logger.info(f"Using PostgreSQL database with connection pooling: pool_size={DB_POOL_SIZE}, max_overflow={DB_MAX_OVERFLOW}, timeout={DB_POOL_TIMEOUT}")
 else:
     # SQLite for development
     engine = create_engine(
@@ -115,6 +117,10 @@ def get_db():
     """Get a database session."""
     db = SessionLocal()
     try:
+        # Log connection pool status for debugging
+        if DATABASE_URL.startswith("postgresql"):
+            pool = engine.pool
+            logger.debug(f"Pool status: size={pool.size()}, checked_in={pool.checkedin()}, checked_out={pool.checkedout()}, overflow={pool.overflow()}")
         yield db
     finally:
         db.close()

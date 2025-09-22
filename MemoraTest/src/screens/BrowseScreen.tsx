@@ -134,30 +134,77 @@ export const BrowseScreen: React.FC = () => {
     return counts;
   };
 
+  const generateFallbackTagGroups = (items: UserItem[]): TagGroup[] => {
+    const tagGroups: { [key: string]: UserItem[] } = {};
+    
+    // Group items by tags
+    items.forEach(item => {
+      if (item.tags && item.tags.length > 0) {
+        item.tags.forEach(tag => {
+          if (!tagGroups[tag]) {
+            tagGroups[tag] = [];
+          }
+          tagGroups[tag].push(item);
+        });
+      }
+    });
+    
+    // Convert to TagGroup format and sort by count
+    return Object.entries(tagGroups)
+      .map(([tag, tagItems]) => ({
+        tag,
+        count: tagItems.length,
+        items: tagItems.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      }))
+      .sort((a, b) => b.count - a.count);
+  };
+
   const loadMemories = async () => {
-    if (!user) return;
+    if (!user) {
+      console.warn('❌ loadMemories called without user');
+      setIsLoading(false);
+      setRefreshing(false);
+      return;
+    }
+    
+    console.log('🔄 Starting loadMemories for user:', user.id);
     
     try {
+      // Load basic memories first (this should always work)
+      console.log('📱 Fetching user items...');
       const items = await apiService.getUserItems(user.id);
+      console.log(`✅ Loaded ${items.length} items`);
+      
       const sortedItems = items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       setMemories(sortedItems);
       
       // Initialize with categories view (default)
       setFilteredMemories(sortedItems);
       setFilterCounts(calculateFilterCounts(sortedItems));
+      console.log('✅ Basic memories loaded and set');
       
-      // Load tag data for tag-based view
-      const [tagsResponse, groupsResponse] = await Promise.all([
-        apiService.getTagsWithCounts(user.id),
-        apiService.getTagGroups(user.id)
-      ]);
-      
-      setTagsWithCounts(tagsResponse.tags);
-      setTagGroups(groupsResponse.groups);
+      // Try to load tag data for tag-based view (optional, new endpoints)
+      try {
+        const [tagsResponse, groupsResponse] = await Promise.all([
+          apiService.getTagsWithCounts(user.id),
+          apiService.getTagGroups(user.id)
+        ]);
+        
+        setTagsWithCounts(tagsResponse.tags);
+        setTagGroups(groupsResponse.groups);
+        console.log('✅ Tag data loaded successfully');
+      } catch (tagError) {
+        console.warn('⚠️ Tag endpoints not available yet:', tagError);
+        // Fallback: generate tag groups from existing data
+        const fallbackGroups = generateFallbackTagGroups(sortedItems);
+        setTagGroups(fallbackGroups);
+        setTagsWithCounts(fallbackGroups.map(group => ({ tag: group.tag, count: group.count })));
+      }
     } catch (error) {
-      console.error('Error loading memories:', error);
+      console.error('❌ Error loading memories:', error);
       Alert.alert('Error', 'Failed to load memories. Please try again.');
     } finally {
+      console.log('🏁 Finishing loadMemories - setting loading states to false');
       setIsLoading(false);
       setRefreshing(false);
     }
@@ -483,10 +530,10 @@ export const BrowseScreen: React.FC = () => {
                 
                 const previewImage = getPreviewImageUrl(item);
                 const positions = [
-                  { top: 4, left: 4 },      // Top-left
-                  { top: 4, right: 4 },     // Top-right  
-                  { bottom: 4, left: 4 },   // Bottom-left
-                  { bottom: 4, right: 4 }   // Bottom-right
+                  { top: 8, left: 8 },      // Top-left
+                  { top: 8, right: 8 },     // Top-right  
+                  { bottom: 8, left: 8 },   // Bottom-left
+                  { bottom: 8, right: 8 }   // Bottom-right
                 ];
                 
                 return (
@@ -517,7 +564,7 @@ export const BrowseScreen: React.FC = () => {
             {tagGroup.tag.charAt(0).toUpperCase() + tagGroup.tag.slice(1)}
           </Text>
           <Text style={styles.categoryCount}>
-            {tagGroup.count} {tagGroup.count === 1 ? 'item' : 'items'}
+            {tagGroup.count}
           </Text>
         </View>
       </View>
@@ -646,7 +693,23 @@ export const BrowseScreen: React.FC = () => {
           </Animated.View>
         )}
 
-                {viewMode === 'categories' && selectedTag === null ? (
+                {/* Category header when viewing specific category */}
+        {viewMode === 'categories' && selectedTag !== null && (
+          <View style={styles.categoryHeader}>
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={() => setSelectedTag(null)}
+            >
+              <Text style={styles.backButtonText}>← Categories</Text>
+            </TouchableOpacity>
+            <Text style={styles.categoryHeaderTitle}>
+              {selectedTag.charAt(0).toUpperCase() + selectedTag.slice(1)}
+            </Text>
+            <View style={styles.backButtonPlaceholder} />
+          </View>
+        )}
+
+        {viewMode === 'categories' && selectedTag === null ? (
           // Show category cards in 2x2 grid
           <FlatList
             key="categoryGrid"
@@ -1057,23 +1120,23 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   categoryContainer: {
     width: ITEM_WIDTH,
     alignItems: 'center',
-    marginBottom: PADDING + 8,
-    marginTop: 8,
+    marginBottom: PADDING,
+    marginTop: 4,
   },
   categoryCard: {
     width: ITEM_WIDTH,
     height: ITEM_WIDTH, // Square like iPhone folders
-    backgroundColor: theme.colors.card === '#FFFFFF' 
-      ? 'rgba(255, 255, 255, 0.9)' 
-      : 'rgba(44, 44, 46, 0.95)', // Dark mode support
+    backgroundColor: theme.colors.background === '#000000' || theme.colors.background === '#1C1C1E'
+      ? 'rgba(44, 44, 46, 0.95)' // Dark mode
+      : 'rgba(255, 255, 255, 0.9)', // Light mode
     borderRadius: 28,
-    padding: 8,
+    padding: 12,
     borderWidth: 0,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: theme.colors.card === '#FFFFFF' ? 0.15 : 0.4,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: theme.colors.background === '#000000' || theme.colors.background === '#1C1C1E' ? 0.4 : 0.12,
+    shadowRadius: 12,
+    elevation: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1087,32 +1150,26 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   },
   categoryThumbnail: {
     position: 'absolute',
-    width: (ITEM_WIDTH - 24) / 2, // Much larger thumbnails
-    height: (ITEM_WIDTH - 24) / 2,
-    borderRadius: 12,
+    width: (ITEM_WIDTH - 32) / 2, // Slightly smaller with more padding
+    height: (ITEM_WIDTH - 32) / 2,
+    borderRadius: 16,
     overflow: 'hidden',
-    borderWidth: 1.5,
-    borderColor: theme.colors.card === '#FFFFFF' 
-      ? 'rgba(255, 255, 255, 0.8)' 
-      : 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 0,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
   },
   categoryThumbnailEmpty: {
     position: 'absolute',
-    width: (ITEM_WIDTH - 24) / 2,
-    height: (ITEM_WIDTH - 24) / 2,
-    borderRadius: 12,
-    backgroundColor: theme.colors.card === '#FFFFFF' 
-      ? 'rgba(0, 0, 0, 0.08)' 
-      : 'rgba(255, 255, 255, 0.1)',
-    borderWidth: 1,
-    borderColor: theme.colors.card === '#FFFFFF' 
-      ? 'rgba(0, 0, 0, 0.1)' 
-      : 'rgba(255, 255, 255, 0.05)',
+    width: (ITEM_WIDTH - 32) / 2,
+    height: (ITEM_WIDTH - 32) / 2,
+    borderRadius: 16,
+    backgroundColor: theme.colors.background === '#000000' || theme.colors.background === '#1C1C1E'
+      ? 'rgba(255, 255, 255, 0.1)' // Dark mode
+      : 'rgba(0, 0, 0, 0.08)', // Light mode
+    borderWidth: 0,
   },
   categoryThumbnailImage: {
     width: '100%',
@@ -1123,7 +1180,7 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 12,
+    borderRadius: 16,
   },
   categoryThumbnailIcon: {
     fontSize: 24,
@@ -1132,21 +1189,51 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   categoryInfo: {
     alignItems: 'center',
     width: '100%',
-    marginTop: 12,
+    marginTop: 8,
+    flexDirection: 'row',
+    justifyContent: 'center',
   },
   categoryTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: theme.colors.text,
     textAlign: 'center',
-    marginBottom: 2,
-    letterSpacing: -0.3,
+    letterSpacing: -0.2,
+    marginRight: 6,
   },
   categoryCount: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '500',
     color: theme.colors.textSecondary,
+    opacity: 0.8,
+  },
+  // Category navigation styles
+  categoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    backgroundColor: theme.colors.background,
+  },
+  backButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  backButtonText: {
+    fontSize: 16,
+    color: theme.colors.primary,
+    fontWeight: '600',
+  },
+  categoryHeaderTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: theme.colors.text,
     textAlign: 'center',
-    opacity: 0.7,
+  },
+  backButtonPlaceholder: {
+    width: 80, // Same width as back button for centering
   },
 }); 
