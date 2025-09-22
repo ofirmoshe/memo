@@ -507,6 +507,97 @@ async def get_user_stats(user_id: str, db: Session = Depends(get_db)):
         logger.error(f"Error getting stats for user {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error retrieving statistics: {str(e)}")
 
+@app.get("/user/{user_id}/tags")
+async def get_user_tags_with_counts(user_id: str, db: Session = Depends(get_db)):
+    """Get all tags for a user with their item counts, sorted by count."""
+    try:
+        # Get or create user
+        user = get_or_create_user(db, user_id)
+        
+        # Get all user items
+        items = db.query(Item).filter(Item.user_id == user_id).all()
+        
+        # Count items per tag
+        tag_counts = Counter()
+        for item in items:
+            if item.tags:
+                for tag in item.tags:
+                    tag_counts[tag] += 1
+        
+        # Sort by count (descending) and return
+        sorted_tags = tag_counts.most_common()
+        
+        return {
+            "tags": [{"tag": tag, "count": count} for tag, count in sorted_tags]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting tags for user {user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving tags: {str(e)}")
+
+@app.get("/user/{user_id}/items/by-tag")
+async def get_items_grouped_by_tags(user_id: str, db: Session = Depends(get_db)):
+    """Get user items grouped by tags, sorted by tag popularity and item save date."""
+    try:
+        # Get or create user
+        user = get_or_create_user(db, user_id)
+        
+        # Get all user items ordered by timestamp (newest first)
+        items = db.query(Item).filter(Item.user_id == user_id).order_by(Item.timestamp.desc()).all()
+        
+        # Group items by tags
+        tag_groups = {}
+        tag_counts = Counter()
+        
+        for item in items:
+            if item.tags:
+                for tag in item.tags:
+                    tag_counts[tag] += 1
+                    if tag not in tag_groups:
+                        tag_groups[tag] = []
+                    
+                    # Convert item to dict for response
+                    item_dict = {
+                        "id": item.id,
+                        "user_id": item.user_id,
+                        "url": item.url,
+                        "title": item.title,
+                        "description": item.description,
+                        "tags": item.tags or [],
+                        "timestamp": item.timestamp,
+                        "content_type": item.content_type,
+                        "platform": item.platform,
+                        "media_type": item.media_type,
+                        "content_data": item.content_data,
+                        "file_path": item.file_path,
+                        "file_size": item.file_size,
+                        "mime_type": item.mime_type,
+                        "user_context": item.user_context,
+                        "content_text": item.content_text,
+                        "content_json": item.content_json,
+                        "preview_image_url": item.preview_image_url,
+                        "preview_thumbnail_path": item.preview_thumbnail_path
+                    }
+                    tag_groups[tag].append(item_dict)
+        
+        # Sort tag groups by popularity (count)
+        sorted_groups = []
+        for tag, count in tag_counts.most_common():
+            # Items within each group are already sorted by timestamp (newest first)
+            sorted_groups.append({
+                "tag": tag,
+                "count": count,
+                "items": tag_groups[tag]
+            })
+        
+        return {
+            "groups": sorted_groups
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting grouped items for user {user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving grouped items: {str(e)}")
+
 @app.get("/user/{user_id}/items", response_model=List[MemoraItem])
 async def get_user_items(user_id: str, limit: int = 50, offset: int = 0, media_type: str = None, db: Session = Depends(get_db)):
     """Get user's saved items with pagination."""

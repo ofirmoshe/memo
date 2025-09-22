@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -7,9 +7,12 @@ import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
 import { ChatScreen } from './src/screens/ChatScreen';
 import { BrowseScreen } from './src/screens/BrowseScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
+import { LoginScreen } from './src/screens/LoginScreen';
 import { LoadingScreen } from './src/components/LoadingScreen';
 import { View, StyleSheet } from 'react-native';
 import { Path, Svg } from 'react-native-svg';
+import * as Linking from 'expo-linking';
+import { parseShareData, extractShareContent } from './src/utils/shareHandler';
 
 const Tab = createBottomTabNavigator();
 
@@ -73,12 +76,12 @@ const ProfileIcon = ({ color, focused }: { color: string, focused: boolean }) =>
   </Svg>
 );
 
-const AppNavigator = () => {
+const AppNavigator = ({ sharedUrl, onUrlProcessed }: { sharedUrl: string | null, onUrlProcessed: () => void }) => {
   const { theme } = useTheme();
 
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
+      screenOptions={({ route }: { route: any }) => ({
         headerShown: false,
         tabBarShowLabel: false,
         tabBarStyle: {
@@ -87,7 +90,7 @@ const AppNavigator = () => {
           height: 90,
           paddingTop: 10,
         },
-        tabBarIcon: ({ focused, color, size }) => {
+        tabBarIcon: ({ focused, color, size }: { focused: boolean, color: string, size: number }) => {
           if (route.name === 'Browse') {
             return <BrowseIcon color={color} focused={focused} />;
           } else if (route.name === 'Chat') {
@@ -101,22 +104,70 @@ const AppNavigator = () => {
       })}
     >
       <Tab.Screen name="Browse" component={BrowseScreen} />
-      <Tab.Screen name="Chat" component={ChatScreen} />
+      <Tab.Screen name="Chat" component={ChatScreen} initialParams={{ sharedUrl }} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );
 };
 
 const AppContent = () => {
-  const { isLoading } = useAuth();
+  const { user, isLoading } = useAuth();
+  const [sharedUrl, setSharedUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Handle URLs when app is already running
+    const subscription = Linking.addEventListener('url', handleDeepLink);
+    
+    // Handle URLs when app is opened from a share
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        handleDeepLink({ url });
+      }
+    });
+
+    return () => {
+      subscription?.remove();
+    };
+  }, []);
+
+  const handleDeepLink = ({ url }: { url: string }) => {
+    if (url) {
+      // Try to parse as Memora share link first
+      const shareData = parseShareData(url);
+      if (shareData) {
+        if (shareData.url) {
+          setSharedUrl(shareData.url);
+        } else if (shareData.text) {
+          setSharedUrl(shareData.text);
+        }
+        return;
+      }
+      
+      // Fallback: try to extract content from various formats
+      const extractedContent = extractShareContent(url);
+      if (extractedContent) {
+        if (extractedContent.url) {
+          setSharedUrl(extractedContent.url);
+        } else if (extractedContent.text) {
+          setSharedUrl(extractedContent.text);
+        }
+      }
+    }
+  };
 
   if (isLoading) {
     return <LoadingScreen message="Setting up your personal memory assistant..." />;
   }
 
+  // Show login screen if no user is authenticated
+  if (!user) {
+    return <LoginScreen />;
+  }
+
+  // Show main app if user is authenticated
   return (
     <NavigationContainer>
-      <AppNavigator />
+      <AppNavigator sharedUrl={sharedUrl} onUrlProcessed={() => setSharedUrl(null)} />
     </NavigationContainer>
   );
 };

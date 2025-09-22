@@ -11,10 +11,9 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { useTheme } from '../contexts/ThemeContext';
+import { useAuth } from '../contexts/AuthContext';
 import { apiService, UserStats as ApiUserStats } from '../services/api';
 import { Logo } from '../components/Logo';
-
-const USER_ID = '831447258';
 
 interface UserStats {
   totalMemories: number;
@@ -27,13 +26,16 @@ interface UserStats {
 
 export const ProfileScreen: React.FC = () => {
   const { theme, isDarkMode, toggleTheme } = useTheme();
+  const { user, signOut } = useAuth();
   const [stats, setStats] = useState<UserStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const loadUserStats = async () => {
+      if (!user) return;
+      
       try {
-        const apiStats = await apiService.getUserStats(USER_ID);
+        const apiStats = await apiService.getUserStats(user.id);
         const mappedStats: UserStats = {
           totalMemories: apiStats.total_items,
           textNotes: apiStats.texts,
@@ -52,7 +54,29 @@ export const ProfileScreen: React.FC = () => {
     };
 
     loadUserStats();
-  }, []);
+  }, [user]);
+
+  const handleSignOut = async () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await signOut();
+            } catch (error) {
+              console.error('Sign out error:', error);
+              Alert.alert('Error', 'Failed to sign out. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const StatCard = ({ label, value }: { label: string; value: number | string }) => (
     <View style={[styles.statCard, { backgroundColor: theme.colors.surface }]}>
@@ -87,6 +111,21 @@ export const ProfileScreen: React.FC = () => {
           <Text style={[styles.userDescription, { color: theme.colors.textSecondary }]}>
             Your personal memory assistant
           </Text>
+          
+          {/* User Profile Info */}
+          <View style={[styles.userProfileCard, { backgroundColor: theme.colors.surface }]}>
+            <Text style={[styles.userName, { color: theme.colors.text }]}>
+              {user?.name || 'User'}
+            </Text>
+            {user?.email && (
+              <Text style={[styles.userEmail, { color: theme.colors.textSecondary }]}>
+                {user.email}
+              </Text>
+            )}
+            <Text style={[styles.userProvider, { color: theme.colors.textTertiary }]}>
+              Signed in with {user?.provider === 'google' ? 'Google' : 'Guest Mode'}
+            </Text>
+          </View>
       </View>
       
           <View style={styles.section}>
@@ -127,6 +166,17 @@ export const ProfileScreen: React.FC = () => {
           </SettingsRow>
           </View>
         </View>
+
+        {/* Sign Out Button */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={[styles.signOutButton, { backgroundColor: theme.colors.error }]}
+            onPress={handleSignOut}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.signOutButtonText}>Sign Out</Text>
+          </TouchableOpacity>
+        </View>
     </ScrollView>
     </SafeAreaView>
   );
@@ -149,6 +199,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 24,
     marginBottom: 8,
+  },
+  userProfileCard: {
+    padding: 16,
+    borderRadius: 12,
+    marginTop: 16,
+    alignItems: 'center',
+    width: '100%',
+  },
+  userName: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  userEmail: {
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  userProvider: {
+    fontSize: 12,
+    textTransform: 'capitalize',
   },
   section: {
     marginVertical: 16,
@@ -229,5 +299,17 @@ const styles = StyleSheet.create({
   userDescription: {
     fontSize: 16,
     textAlign: 'center',
+  },
+  signOutButton: {
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  signOutButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

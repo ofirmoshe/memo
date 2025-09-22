@@ -57,6 +57,21 @@ export interface UserStats {
   top_tags: Array<[string, number]>;
 }
 
+export interface TagWithCount {
+  tag: string;
+  count: number;
+}
+
+export interface TagGroup {
+  tag: string;
+  count: number;
+  items: UserItem[];
+}
+
+export interface TagGroupsResponse {
+  groups: TagGroup[];
+}
+
 class ApiService {
   private baseUrl: string;
 
@@ -182,6 +197,16 @@ class ApiService {
   // Get user stats - GET /user/{user_id}/stats
   async getUserStats(userId: string): Promise<UserStats> {
     return this.request<UserStats>(`/user/${userId}/stats`);
+  }
+
+  // Get tags with counts - GET /user/{user_id}/tags
+  async getTagsWithCounts(userId: string): Promise<{ tags: TagWithCount[] }> {
+    return this.request<{ tags: TagWithCount[] }>(`/user/${userId}/tags`);
+  }
+
+  // Get tag groups - GET /user/{user_id}/items/by-tag
+  async getTagGroups(userId: string): Promise<TagGroupsResponse> {
+    return this.request<TagGroupsResponse>(`/user/${userId}/items/by-tag`);
   }
 
   // Delete item - POST /delete-item

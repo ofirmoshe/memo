@@ -1,39 +1,61 @@
 {
   "expo": {
-    "name": "MemoraTest",
+    "name": "Memora",
     "slug": "MemoraTest",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#1a1a1a"
     },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.yourcompany.memoratest",
-      "buildNumber": "1"
+      "bundleIdentifier": "com.memora.assistant",
+      "icon": "./assets/icon.png",
+      "infoPlist": {
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLName": "memora",
+            "CFBundleURLSchemes": ["memora"]
+          }
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#1a1a1a"
       },
-      "edgeToEdgeEnabled": true,
-      "package": "com.yourcompany.memoratest",
-      "versionCode": 1
+      "package": "com.memora.assistant",
+      "icon": "./assets/icon.png",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "memora"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "scheme": "memora",
     "extra": {
       "eas": {
-        "projectId": "your-project-id-here"
+        "projectId": "91627cdc-34c9-4cb9-95c1-34fc72d9eecc"
       }
     },
-    "owner": "your-expo-username"
+    "owner": "ofirmoshe"
   }
 }

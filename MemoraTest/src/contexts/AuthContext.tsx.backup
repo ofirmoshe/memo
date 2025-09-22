@@ -1,15 +1,7 @@
-﻿import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
-import Constants from 'expo-constants';
-
-// Conditionally import GoogleAuthService
-let GoogleAuthService: any = null;
-try {
-  GoogleAuthService = require('../services/googleAuth').GoogleAuthService;
-} catch (error) {
-  console.warn('GoogleAuthService not available:', error);
-}
+import { GoogleAuthService } from '../services/googleAuth';
 
 interface User {
   id: string;
@@ -25,7 +17,6 @@ interface AuthContextType {
   signIn: (provider: 'device' | 'google' | 'apple', userData?: Partial<User>) => Promise<void>;
   signOut: () => Promise<void>;
   updateUser: (userData: Partial<User>) => Promise<void>;
-  isExpoGo: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -45,9 +36,6 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-
-  // Detect if running in Expo Go
-  const isExpoGo = Constants.appOwnership === 'expo';
 
   useEffect(() => {
     loadStoredUser();
@@ -70,12 +58,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const signIn = async (provider: 'device' | 'google' | 'apple', userData?: Partial<User>) => {
     try {
       let newUser: User;
-
-      // Skip Google auth in Expo Go
-      if (provider === 'google' && isExpoGo) {
-        console.log('Google auth skipped in Expo Go - using device auth instead');
-        provider = 'device';
-      }
 
       switch (provider) {
         case 'device':
@@ -128,7 +110,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const signOut = async () => {
     try {
       // If user was signed in with Google, sign out from Google too
-      if (user?.provider === 'google' && !isExpoGo && GoogleAuthService) {
+      if (user?.provider === 'google') {
         await GoogleAuthService.signOut();
       }
       
@@ -161,8 +143,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     signIn,
     signOut,
     updateUser,
-    isExpoGo,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-};
+}; 
