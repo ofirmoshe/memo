@@ -4,11 +4,12 @@
   },
   "build": {
     "development": {
-      "developmentClient": true,
+      "developmentClient": false,
       "distribution": "internal",
       "ios": {
         "resourceClass": "m-medium",
-        "simulator": true
+        "simulator": false,
+        "buildConfiguration": "Release"
       },
       "android": {
         "buildType": "apk",
@@ -19,7 +20,8 @@
       "distribution": "internal",
       "ios": {
         "resourceClass": "m-medium",
-        "simulator": false
+        "simulator": false,
+        "buildConfiguration": "Release"
       },
       "android": {
         "buildType": "apk"
@@ -28,6 +30,7 @@
     "production": {
       "ios": {
         "resourceClass": "m-medium",
+        "buildConfiguration": "Release",
         "autoIncrement": "buildNumber"
       },
       "android": {

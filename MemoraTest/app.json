@@ -35,16 +35,27 @@
         },
         "CFBundleDocumentTypes": [
           {
-            "CFBundleTypeName": "URL",
+            "CFBundleTypeName": "Web URL",
             "CFBundleTypeRole": "Editor",
             "LSItemContentTypes": ["public.url"],
             "LSHandlerRank": "Owner"
           },
           {
-            "CFBundleTypeName": "Text",
-            "CFBundleTypeRole": "Editor", 
+            "CFBundleTypeName": "Plain Text",
+            "CFBundleTypeRole": "Editor",
             "LSItemContentTypes": ["public.text", "public.plain-text"],
             "LSHandlerRank": "Owner"
+          }
+        ],
+        "UTImportedTypeDeclarations": [
+          {
+            "UTTypeIdentifier": "public.url",
+            "UTTypeDescription": "Web URL",
+            "UTTypeConformsTo": ["public.data"],
+            "UTTypeTagSpecification": {
+              "public.filename-extension": ["url"],
+              "public.mime-type": ["text/uri-list"]
+            }
           }
         ]
       },
