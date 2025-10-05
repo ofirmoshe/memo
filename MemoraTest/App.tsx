@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import React, { useState, useEffect, useRef } from 'react';
+import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
@@ -14,6 +14,8 @@ import { Path, Svg } from 'react-native-svg';
 import * as Linking from 'expo-linking';
 import { Platform } from 'react-native';
 import { parseShareData, extractShareContent, handleAndroidShareIntent } from './src/utils/shareHandler';
+import { useShareIntent } from 'expo-share-intent';
+
 
 const Tab = createBottomTabNavigator();
 
@@ -115,31 +117,65 @@ const AppNavigator = ({ sharedUrl, onUrlProcessed }: { sharedUrl: string | null,
 const AppContent = () => {
   const { user, isLoading } = useAuth();
   const [sharedUrl, setSharedUrl] = useState<string | null>(null);
+  const navigationRef = useRef<NavigationContainerRef<any>>(null);
+
+  // Use expo-share-intent hook to handle shared content from iOS/Android
+  const { hasShareIntent, shareIntent, resetShareIntent, error } = useShareIntent({
+    debug: true,
+    resetOnBackground: false, // Don't reset when app goes to background
+  });
+
+  // Handle share intent data
+  useEffect(() => {
+    if (hasShareIntent && shareIntent) {
+      console.log('Share intent received:', shareIntent);
+
+      // Extract URL or text from share intent
+      let contentToShare = null;
+
+      if (shareIntent.webUrl) {
+        contentToShare = shareIntent.webUrl;
+      } else if (shareIntent.text) {
+        contentToShare = shareIntent.text;
+      } else if (shareIntent.files && shareIntent.files.length > 0) {
+        // For files, you might want to handle differently
+        contentToShare = shareIntent.files[0].path;
+      }
+
+      if (contentToShare) {
+        console.log('Setting shared URL:', contentToShare);
+        setSharedUrl(contentToShare);
+
+        // Navigate to Chat screen after a short delay to ensure navigation is ready
+        setTimeout(() => {
+          if (navigationRef.current?.isReady()) {
+            navigationRef.current?.navigate('Chat', { sharedUrl: contentToShare });
+          }
+        }, 100);
+      }
+
+      // Reset the share intent after processing
+      resetShareIntent();
+    }
+  }, [hasShareIntent, shareIntent]);
+
+  // Log any share intent errors
+  useEffect(() => {
+    if (error) {
+      console.error('Share intent error:', error);
+    }
+  }, [error]);
 
   useEffect(() => {
-    // Handle URLs when app is already running
+    // Handle URLs when app is already running (for deep links)
     const subscription = Linking.addEventListener('url', handleDeepLink);
-    
-    // Handle URLs when app is opened from a share
+
+    // Handle URLs when app is opened from a deep link
     Linking.getInitialURL().then((url) => {
       if (url) {
         handleDeepLink({ url });
       }
     });
-
-    // Handle Android share intents
-    if (Platform.OS === 'android') {
-      const handleInitialShareIntent = async () => {
-        try {
-          // This would be implemented with a native module in a real app
-          // For now, we'll rely on URL handling
-        } catch (error) {
-          console.log('Error handling initial share intent:', error);
-        }
-      };
-      
-      handleInitialShareIntent();
-    }
 
     return () => {
       subscription?.remove();
@@ -148,9 +184,24 @@ const AppContent = () => {
 
   const handleDeepLink = ({ url }: { url: string }) => {
     console.log('Handling deep link:', url);
-    
+
     if (url) {
-      // Try to parse as Memora share link first
+      // Check if this is from the share extension (memora://share?url=...)
+      if (url.startsWith('memora://share')) {
+        try {
+          const urlObj = new URL(url);
+          const sharedUrl = urlObj.searchParams.get('url');
+          if (sharedUrl) {
+            console.log('Share extension shared URL:', sharedUrl);
+            setSharedUrl(decodeURIComponent(sharedUrl));
+            return;
+          }
+        } catch (error) {
+          console.error('Error parsing share extension URL:', error);
+        }
+      }
+
+      // Try to parse as Memora share link
       const shareData = parseShareData(url);
       if (shareData) {
         console.log('Parsed share data:', shareData);
@@ -161,7 +212,7 @@ const AppContent = () => {
         }
         return;
       }
-      
+
       // Fallback: try to extract content from various formats
       const extractedContent = extractShareContent(url);
       if (extractedContent) {
@@ -186,7 +237,7 @@ const AppContent = () => {
 
   // Show main app if user is authenticated
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <AppNavigator sharedUrl={sharedUrl} onUrlProcessed={() => setSharedUrl(null)} />
     </NavigationContainer>
   );

@@ -10,6 +10,7 @@
     "test:deep-linking": "node test-deep-linking.js"
   },
   "dependencies": {
+    "@expo/config-plugins": "^54.0.1",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-google-signin/google-signin": "^15.0.0",
     "@react-navigation/bottom-tabs": "^7.4.2",
@@ -22,6 +23,7 @@
     "expo-document-picker": "~14.0.7",
     "expo-image-picker": "~17.0.8",
     "expo-linking": "~8.0.8",
+    "expo-share-intent": "^5.0.1",
     "expo-status-bar": "~3.0.8",
     "expo-web-browser": "~15.0.7",
     "react": "19.1.0",
