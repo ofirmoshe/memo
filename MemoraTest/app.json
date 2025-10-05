@@ -37,7 +37,11 @@
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
         },
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSPhotoLibraryUsageDescription": "Memora needs access to your photo library to save images you want to remember.",
+        "NSCameraUsageDescription": "Memora needs camera access to take photos you want to save to your memory.",
+        "NSMicrophoneUsageDescription": "Memora needs microphone access to record voice notes.",
+        "NSUserTrackingUsageDescription": "This allows us to provide you with personalized content and improve your experience."
       },
       "associatedDomains": [
         "applinks:memora.app"
@@ -46,7 +50,8 @@
         "com.apple.security.application-groups": [
           "group.com.memora.assistant"
         ]
-      }
+      },
+      "buildNumber": "2"
     },
     "android": {
       "adaptiveIcon": {

@@ -9,7 +9,7 @@ import { BrowseScreen } from './src/screens/BrowseScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { LoadingScreen } from './src/components/LoadingScreen';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, AppState, InteractionManager } from 'react-native';
 import { Path, Svg } from 'react-native-svg';
 import * as Linking from 'expo-linking';
 import { Platform } from 'react-native';
@@ -117,7 +117,9 @@ const AppNavigator = ({ sharedUrl, onUrlProcessed }: { sharedUrl: string | null,
 const AppContent = () => {
   const { user, isLoading } = useAuth();
   const [sharedUrl, setSharedUrl] = useState<string | null>(null);
+  const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
   const navigationRef = useRef<NavigationContainerRef<any>>(null);
+  const appState = useRef(AppState.currentState);
 
   // Use expo-share-intent hook to handle shared content from iOS/Android
   const { hasShareIntent, shareIntent, resetShareIntent, error } = useShareIntent({
@@ -145,19 +147,62 @@ const AppContent = () => {
       if (contentToShare) {
         console.log('Setting shared URL:', contentToShare);
         setSharedUrl(contentToShare);
-
-        // Navigate to Chat screen after a short delay to ensure navigation is ready
-        setTimeout(() => {
-          if (navigationRef.current?.isReady()) {
-            navigationRef.current?.navigate('Chat', { sharedUrl: contentToShare });
-          }
-        }, 100);
+        setPendingNavigation(contentToShare);
       }
-
-      // Reset the share intent after processing
-      resetShareIntent();
     }
   }, [hasShareIntent, shareIntent]);
+
+  // Navigate when navigation is ready and we have pending navigation
+  useEffect(() => {
+    if (pendingNavigation && navigationRef.current?.isReady()) {
+      console.log('Navigating to Chat with:', pendingNavigation);
+
+      // Wait for all interactions/animations to complete before navigating
+      InteractionManager.runAfterInteractions(() => {
+        console.log('All interactions complete, navigating now');
+
+        navigationRef.current?.navigate('Chat', { sharedUrl: pendingNavigation });
+
+        // Clear pending navigation and reset share intent after successful navigation
+        setPendingNavigation(null);
+        setTimeout(() => {
+          resetShareIntent();
+          // Clear sharedUrl after a longer delay to ensure ChatScreen received it
+          setTimeout(() => {
+            setSharedUrl(null);
+          }, 1000);
+        }, 500);
+      });
+    }
+  }, [pendingNavigation, navigationRef.current]);
+
+  // Handle app state changes to properly bring app to foreground
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      console.log('App state changed from', appState.current, 'to', nextAppState);
+
+      // When app comes to active state with shared content, ensure navigation
+      if (nextAppState === 'active' && appState.current.match(/inactive|background/)) {
+        console.log('App came to foreground');
+
+        if (sharedUrl && navigationRef.current?.isReady()) {
+          console.log('Navigating to Chat after foreground with:', sharedUrl);
+
+          // Wait for all animations to finish before navigating
+          InteractionManager.runAfterInteractions(() => {
+            console.log('Foreground interactions complete, navigating');
+            navigationRef.current?.navigate('Chat', { sharedUrl });
+          });
+        }
+      }
+
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      subscription?.remove();
+    };
+  }, [sharedUrl]);
 
   // Log any share intent errors
   useEffect(() => {
